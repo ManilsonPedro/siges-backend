@@ -1,0 +1,62 @@
+# ============================================================================
+# Backend FastAPI — Production multi-stage build
+# ============================================================================
+
+# ─── Stage 1: dependências ───────────────────────────────────────────────────
+FROM python:3.11-slim AS deps
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+
+# Dependências de sistema (libpq, gcc para builds de psycopg/pillow)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpq-dev \
+      gcc \
+      build-essential \
+      libjpeg-dev \
+      zlib1g-dev \
+      libfreetype6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-prod.txt requirements.txt ./
+RUN pip install --user -r requirements-prod.txt
+
+# ─── Stage 2: runtime ────────────────────────────────────────────────────────
+FROM python:3.11-slim AS runner
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/home/app/.local/bin:${PATH}"
+
+# Bibliotecas runtime apenas (sem gcc)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpq5 \
+      libjpeg62-turbo \
+      libfreetype6 \
+      curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash app
+
+WORKDIR /app
+
+# Copiar dependências instaladas no stage anterior
+COPY --from=deps --chown=app:app /root/.local /home/app/.local
+
+# Código fonte
+COPY --chown=app:app . .
+
+# Criar pasta uploads (fallback storage local)
+RUN mkdir -p uploads && chown -R app:app uploads
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

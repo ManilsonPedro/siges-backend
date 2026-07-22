@@ -1,0 +1,35 @@
+# ============ Claude Code (sessões locais) ============
+.claude/
+
+# ============ Credenciais — NUNCA commitar ============
+.env
+.env.dev
+.env.production
+
+# ============ Base de dados local ============
+*.db
+*.db-shm
+*.db-wal
+
+# ============ Uploads locais ============
+uploads/
+
+# ============ Python ============
+venv/
+__pycache__/
+app/**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# ============ Sistema operativo ============
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============ IDEs ============
+.vscode/settings.json
+.idea/
+*.suo
+*.user
