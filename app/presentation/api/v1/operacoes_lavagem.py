@@ -32,14 +32,293 @@ from app.infrastructure.auth.dependencies import require_permission
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
+    CategoriaVeiculoModel,
     ControloQualidadeLavagemModel,
+    ExtraLavagemModel,
+    OrdemLavagemExtraModel,
     OrdemLavagemModel,
     SlotLavagemModel,
     TipoLavagemModel,
+    ViaturaModel,
 )
 
 
 router = APIRouter()
+
+
+# ─── Categorias de Veículo ───────────────────────────────────────────
+
+
+class CategoriaVeiculoCreateDTO(BaseModel):
+    codigo: str = Field(..., min_length=1, max_length=30)
+    nome: str = Field(..., min_length=1, max_length=80)
+    fator_preco: Decimal = Field(default=Decimal("1"), gt=0)
+    fator_agua: Decimal = Field(default=Decimal("1"), gt=0)
+    ordem: int = Field(default=0, ge=0)
+    activo: bool = True
+
+
+class CategoriaVeiculoUpdateDTO(BaseModel):
+    nome: Optional[str] = Field(None, min_length=1, max_length=80)
+    fator_preco: Optional[Decimal] = Field(None, gt=0)
+    fator_agua: Optional[Decimal] = Field(None, gt=0)
+    ordem: Optional[int] = Field(None, ge=0)
+    activo: Optional[bool] = None
+
+
+class CategoriaVeiculoResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    codigo: str
+    nome: str
+    fator_preco: Decimal
+    fator_agua: Decimal
+    ordem: int
+    activo: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/categorias-veiculo", response_model=List[CategoriaVeiculoResponseDTO])
+async def list_categorias_veiculo(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    r = await db.execute(
+        select(CategoriaVeiculoModel)
+        .where(CategoriaVeiculoModel.company_id == current_user.company_id)
+        .where(CategoriaVeiculoModel.deleted_at.is_(None))
+        .order_by(CategoriaVeiculoModel.ordem)
+    )
+    return list(r.scalars().all())
+
+
+@router.post("/categorias-veiculo", response_model=CategoriaVeiculoResponseDTO, status_code=201)
+async def create_categoria_veiculo(
+    body: CategoriaVeiculoCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    m = CategoriaVeiculoModel(id=uuid4(), company_id=current_user.company_id, **body.model_dump())
+    db.add(m)
+    await db.commit()
+    return m
+
+
+@router.patch("/categorias-veiculo/{id}", response_model=CategoriaVeiculoResponseDTO)
+async def update_categoria_veiculo(
+    id: UUID,
+    body: CategoriaVeiculoUpdateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(CategoriaVeiculoModel).where(CategoriaVeiculoModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id or m.deleted_at is not None:
+        raise HTTPException(404, "Categoria de veículo não encontrada")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(m, k, v)
+    await db.commit()
+    return m
+
+
+@router.delete("/categorias-veiculo/{id}", status_code=204)
+async def delete_categoria_veiculo(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(CategoriaVeiculoModel).where(CategoriaVeiculoModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Categoria de veículo não encontrada")
+    m.deleted_at = datetime.utcnow()
+    await db.commit()
+
+
+# ─── Extras de Lavagem ───────────────────────────────────────────────
+
+
+class ExtraLavagemCreateDTO(BaseModel):
+    codigo: str = Field(..., min_length=1, max_length=30)
+    nome: str = Field(..., min_length=1, max_length=120)
+    preco: Decimal = Field(..., ge=0)
+    duracao_adicional_minutos: int = Field(default=0, ge=0)
+    activo: bool = True
+
+
+class ExtraLavagemUpdateDTO(BaseModel):
+    nome: Optional[str] = Field(None, min_length=1, max_length=120)
+    preco: Optional[Decimal] = Field(None, ge=0)
+    duracao_adicional_minutos: Optional[int] = Field(None, ge=0)
+    activo: Optional[bool] = None
+
+
+class ExtraLavagemResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    codigo: str
+    nome: str
+    preco: Decimal
+    duracao_adicional_minutos: int
+    activo: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/extras", response_model=List[ExtraLavagemResponseDTO])
+async def list_extras(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    r = await db.execute(
+        select(ExtraLavagemModel)
+        .where(ExtraLavagemModel.company_id == current_user.company_id)
+        .where(ExtraLavagemModel.deleted_at.is_(None))
+    )
+    return list(r.scalars().all())
+
+
+@router.post("/extras", response_model=ExtraLavagemResponseDTO, status_code=201)
+async def create_extra(
+    body: ExtraLavagemCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    m = ExtraLavagemModel(id=uuid4(), company_id=current_user.company_id, **body.model_dump())
+    db.add(m)
+    await db.commit()
+    return m
+
+
+@router.patch("/extras/{id}", response_model=ExtraLavagemResponseDTO)
+async def update_extra(
+    id: UUID,
+    body: ExtraLavagemUpdateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(ExtraLavagemModel).where(ExtraLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id or m.deleted_at is not None:
+        raise HTTPException(404, "Extra não encontrado")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(m, k, v)
+    await db.commit()
+    return m
+
+
+@router.delete("/extras/{id}", status_code=204)
+async def delete_extra(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(ExtraLavagemModel).where(ExtraLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Extra não encontrado")
+    m.deleted_at = datetime.utcnow()
+    await db.commit()
+
+
+# ─── Viaturas (walk-in ou cliente cadastrado) ────────────────────────
+
+
+class ViaturaCreateDTO(BaseModel):
+    cliente_id: Optional[UUID] = None
+    matricula: str = Field(..., min_length=1, max_length=20)
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    cor: Optional[str] = None
+    categoria_veiculo_id: Optional[UUID] = None
+
+
+class ViaturaResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    cliente_id: Optional[str] = None
+    matricula: str
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    cor: Optional[str] = None
+    categoria_veiculo_id: Optional[UUID] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/viaturas", response_model=List[ViaturaResponseDTO])
+async def list_viaturas(
+    matricula: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    stmt = (
+        select(ViaturaModel)
+        .where(ViaturaModel.company_id == current_user.company_id)
+        .where(ViaturaModel.deleted_at.is_(None))
+    )
+    if matricula:
+        stmt = stmt.where(ViaturaModel.matricula.ilike(f"%{matricula}%"))
+    r = await db.execute(stmt)
+    return list(r.scalars().all())
+
+
+@router.post("/viaturas", response_model=ViaturaResponseDTO, status_code=201)
+async def create_viatura(
+    body: ViaturaCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
+):
+    m = ViaturaModel(
+        id=uuid4(), company_id=current_user.company_id,
+        cliente_id=str(body.cliente_id) if body.cliente_id else None,
+        matricula=body.matricula, marca=body.marca, modelo=body.modelo,
+        cor=body.cor, categoria_veiculo_id=body.categoria_veiculo_id,
+    )
+    db.add(m)
+    await db.commit()
+    return m
+
+
+# ─── Cálculo de preço (Sprint 1 — usado por Ordens) ──────────────────
+
+
+async def _calcular_preco_ordem(
+    db: AsyncSession, *, tipo_lavagem_id: UUID, categoria_veiculo_id: Optional[UUID],
+    extra_ids: List[UUID],
+) -> tuple[Decimal, List[tuple[UUID, Decimal]]]:
+    """Devolve (preco_total, [(extra_id, preco_aplicado), ...]).
+
+    preco_total = TipoLavagem.preco_base * CategoriaVeiculo.fator_preco + soma(extras.preco)
+    Sem categoria informada, fator_preco = 1 (comportamento antigo preservado).
+    """
+    tr = await db.execute(select(TipoLavagemModel).where(TipoLavagemModel.id == tipo_lavagem_id))
+    tipo = tr.scalar_one_or_none()
+    if not tipo:
+        raise HTTPException(404, "Tipo de lavagem não encontrado")
+
+    fator = Decimal("1")
+    if categoria_veiculo_id:
+        cr = await db.execute(select(CategoriaVeiculoModel).where(CategoriaVeiculoModel.id == categoria_veiculo_id))
+        cat = cr.scalar_one_or_none()
+        if cat:
+            fator = Decimal(cat.fator_preco)
+
+    total = Decimal(tipo.preco_base) * fator
+    extras_aplicados: List[tuple[UUID, Decimal]] = []
+    for extra_id in extra_ids:
+        er = await db.execute(select(ExtraLavagemModel).where(ExtraLavagemModel.id == extra_id))
+        extra = er.scalar_one_or_none()
+        if not extra:
+            raise HTTPException(404, f"Extra {extra_id} não encontrado")
+        extras_aplicados.append((extra_id, Decimal(extra.preco)))
+        total += Decimal(extra.preco)
+
+    return total, extras_aplicados
 
 
 # ─── Tipos de Lavagem ────────────────────────────────────────────────
@@ -215,6 +494,8 @@ class OrdemCreateDTO(BaseModel):
     tipo_lavagem_id: UUID
     slot_id: Optional[UUID] = None
     box_id: Optional[UUID] = None
+    extra_ids: List[UUID] = Field(default_factory=list)
+    origem: str = Field(default="backoffice_walkin", pattern="^(portal_cliente|backoffice_walkin|backoffice_telefone)$")
 
 
 class ConsumoDTO(BaseModel):
@@ -228,6 +509,14 @@ class QualidadeDTO(BaseModel):
     observacoes: Optional[str] = None
 
 
+class ExtraAplicadoDTO(BaseModel):
+    extra_id: UUID
+    preco_aplicado: Decimal
+
+    class Config:
+        from_attributes = True
+
+
 class OrdemResponseDTO(BaseModel):
     id: UUID
     company_id: UUID
@@ -237,8 +526,11 @@ class OrdemResponseDTO(BaseModel):
     box_id: Optional[UUID] = None
     slot_id: Optional[UUID] = None
     estado: str
+    origem: str
     agua_consumida_litros: Optional[Decimal] = None
     re_lavagem_de_id: Optional[UUID] = None
+    preco_total: Optional[Decimal] = None
+    extras: List[ExtraAplicadoDTO] = []
     created_at: datetime
 
     class Config:
@@ -253,6 +545,28 @@ async def _load_ordem(db: AsyncSession, id: UUID, current_user: User) -> OrdemLa
     return o
 
 
+async def _to_response(db: AsyncSession, o: OrdemLavagemModel) -> OrdemResponseDTO:
+    er = await db.execute(select(OrdemLavagemExtraModel).where(OrdemLavagemExtraModel.ordem_lavagem_id == o.id))
+    extras = list(er.scalars().all())
+
+    categoria_veiculo_id = None
+    if o.viatura_id:
+        vr = await db.execute(select(ViaturaModel).where(ViaturaModel.id == UUID(o.viatura_id)))
+        viatura = vr.scalar_one_or_none()
+        if viatura:
+            categoria_veiculo_id = viatura.categoria_veiculo_id
+
+    preco_total, _ = await _calcular_preco_ordem(
+        db, tipo_lavagem_id=o.tipo_lavagem_id, categoria_veiculo_id=categoria_veiculo_id,
+        extra_ids=[e.extra_id for e in extras],
+    )
+
+    dto = OrdemResponseDTO.model_validate(o)
+    dto.preco_total = preco_total
+    dto.extras = [ExtraAplicadoDTO.model_validate(e) for e in extras]
+    return dto
+
+
 @router.get("/ordens", response_model=List[OrdemResponseDTO])
 async def list_ordens(
     estado: Optional[str] = None,
@@ -264,7 +578,7 @@ async def list_ordens(
         stmt = stmt.where(OrdemLavagemModel.estado == estado)
     stmt = stmt.order_by(OrdemLavagemModel.created_at.desc())
     r = await db.execute(stmt)
-    return list(r.scalars().all())
+    return [await _to_response(db, o) for o in r.scalars().all()]
 
 
 @router.post("/ordens", response_model=OrdemResponseDTO, status_code=201)
@@ -285,22 +599,42 @@ async def create_ordem(
         slot.estado = "reservado"
         estado_inicial = "agendada"
 
+    categoria_veiculo_id = None
+    if body.viatura_id:
+        vr = await db.execute(select(ViaturaModel).where(ViaturaModel.id == body.viatura_id))
+        viatura = vr.scalar_one_or_none()
+        if viatura:
+            categoria_veiculo_id = viatura.categoria_veiculo_id
+
+    # valida tipo de lavagem e extras existem antes de persistir
+    _, extras_aplicados = await _calcular_preco_ordem(
+        db, tipo_lavagem_id=body.tipo_lavagem_id, categoria_veiculo_id=categoria_veiculo_id,
+        extra_ids=body.extra_ids,
+    )
+
     m = OrdemLavagemModel(
         id=uuid4(), company_id=current_user.company_id,
         cliente_id=str(body.cliente_id) if body.cliente_id else None,
         viatura_id=str(body.viatura_id) if body.viatura_id else None,
         tipo_lavagem_id=body.tipo_lavagem_id, box_id=body.box_id, slot_id=body.slot_id,
-        estado=estado_inicial,
+        estado=estado_inicial, origem=body.origem,
     )
     db.add(m)
     await db.flush()
+
+    for extra_id, preco_aplicado in extras_aplicados:
+        db.add(OrdemLavagemExtraModel(
+            id=uuid4(), ordem_lavagem_id=m.id, extra_id=extra_id, preco_aplicado=preco_aplicado,
+        ))
+
     await write_audit(
         db, current_user.id, current_user.company_id,
-        "criada", "ordem_lavagem", m.id, dados_novos={"tipo_lavagem_id": str(body.tipo_lavagem_id)},
+        "criada", "ordem_lavagem", m.id,
+        dados_novos={"tipo_lavagem_id": str(body.tipo_lavagem_id), "origem": body.origem},
         ip_address=req.client.host if req.client else None,
     )
     await db.commit()
-    return m
+    return await _to_response(db, m)
 
 
 @router.post("/ordens/{id}/checkin", response_model=OrdemResponseDTO)
@@ -323,7 +657,7 @@ async def checkin(
     o.estado = "checkin"
     o.updated_at = datetime.utcnow()
     await db.commit()
-    return o
+    return await _to_response(db, o)
 
 
 @router.post("/ordens/{id}/iniciar", response_model=OrdemResponseDTO)
@@ -347,7 +681,7 @@ async def iniciar(
     if box:
         box.estado = "ocupado"
     await db.commit()
-    return o
+    return await _to_response(db, o)
 
 
 @router.post("/ordens/{id}/registar-consumo", response_model=OrdemResponseDTO)
@@ -376,7 +710,7 @@ async def registar_consumo(
         o.quimicos_consumidos = json.dumps(body.quimicos)
 
     await db.commit()
-    return o
+    return await _to_response(db, o)
 
 
 @router.post("/ordens/{id}/controlo-qualidade", response_model=OrdemResponseDTO)
@@ -407,7 +741,7 @@ async def controlo_qualidade(
             ip_address=req.client.host if req.client else None,
         )
     await db.commit()
-    return o
+    return await _to_response(db, o)
 
 
 @router.post("/ordens/{id}/oferecer-re-lavagem", response_model=OrdemResponseDTO, status_code=201)
@@ -421,11 +755,11 @@ async def oferecer_re_lavagem(
         id=uuid4(), company_id=current_user.company_id,
         cliente_id=original.cliente_id, viatura_id=original.viatura_id,
         tipo_lavagem_id=original.tipo_lavagem_id, estado="rascunho",
-        re_lavagem_de_id=original.id,
+        origem=original.origem, re_lavagem_de_id=original.id,
     )
     db.add(nova)
     await db.commit()
-    return nova
+    return await _to_response(db, nova)
 
 
 @router.post("/ordens/{id}/concluir", response_model=OrdemResponseDTO)
@@ -445,7 +779,7 @@ async def concluir(
         if box:
             box.estado = "disponivel"
     await db.commit()
-    return o
+    return await _to_response(db, o)
 
 
 @router.get("/ordens/{id}/fotos")

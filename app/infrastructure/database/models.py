@@ -676,12 +676,13 @@ class ViaturaModel(Base):
 
     id = Column(UUID(), primary_key=True, default=uuid4)
     company_id = Column(UUID(), nullable=False, index=True)
-    cliente_id = Column(String(36), nullable=False, index=True)
+    cliente_id = Column(String(36), nullable=True, index=True)  # nullable: walk-in sem cliente cadastrado
     matricula = Column(String(20), nullable=False)
     marca = Column(String(60), nullable=True)
     modelo = Column(String(60), nullable=True)
     cor = Column(String(30), nullable=True)
     vin = Column(String(30), nullable=True)
+    categoria_veiculo_id = Column(UUID(), nullable=True, index=True)
     deleted_at = Column(DateTime, nullable=True, index=True)
 
 
@@ -1083,9 +1084,11 @@ class OrdemLavagemModel(Base):
     tipo_lavagem_id = Column(UUID(), nullable=False, index=True)
     box_id = Column(UUID(), nullable=True, index=True)
     slot_id = Column(UUID(), nullable=True)
-    equipa = Column(Text, nullable=True)  # CSV de user_id ou nomes livres
     estado = Column(String(20), default="rascunho", nullable=False, index=True)
     # rascunho | agendada | confirmada | checkin | em_curso | controlo_qualidade | concluida | paga
+    origem = Column(String(20), default="backoffice_walkin", nullable=False, index=True)
+    # portal_cliente | backoffice_walkin | backoffice_telefone
+    equipa = Column(Text, nullable=True)  # CSV de user_id, preenchido automaticamente via EscalaTurno
     agua_consumida_litros = Column(Numeric(8, 2), nullable=True)
     quimicos_consumidos = Column(Text, nullable=True)  # JSON serializado: [{produto_id, quantidade}]
     re_lavagem_de_id = Column(UUID(), nullable=True)
@@ -1103,6 +1106,47 @@ class ControloQualidadeLavagemModel(Base):
     pontuacao = Column(Numeric(2, 0), nullable=False)
     observacoes = Column(Text, nullable=True)
     data = Column(DateTime, default=datetime.utcnow)
+
+
+class CategoriaVeiculoModel(Base):
+    """Categoria de veículo (mota, ligeiro, SUV/pickup, pesado) — define
+    fatores multiplicadores de preço e consumo de água para a Lavagem.
+    Configurável pelo backoffice, nunca hardcoded no código."""
+    __tablename__ = "categorias_veiculo"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    codigo = Column(String(30), nullable=False)
+    nome = Column(String(80), nullable=False)
+    fator_preco = Column(Numeric(4, 2), default=1, nullable=False)
+    fator_agua = Column(Numeric(4, 2), default=1, nullable=False)
+    ordem = Column(Numeric(4, 0), default=0, nullable=False)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class ExtraLavagemModel(Base):
+    """Serviço adicional opcional (encerar, polimento, higienização A/C)
+    que pode ser somado a qualquer OrdemLavagem."""
+    __tablename__ = "extras_lavagem"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    codigo = Column(String(30), nullable=False)
+    nome = Column(String(120), nullable=False)
+    preco = Column(Numeric(10, 2), nullable=False)
+    duracao_adicional_minutos = Column(Numeric(5, 0), default=0, nullable=False)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class OrdemLavagemExtraModel(Base):
+    __tablename__ = "ordem_lavagem_extras"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    ordem_lavagem_id = Column(UUID(), nullable=False, index=True)
+    extra_id = Column(UUID(), nullable=False, index=True)
+    preco_aplicado = Column(Numeric(10, 2), nullable=False)  # snapshot do preço no momento
 
 
 class TanqueAguaModel(Base):
