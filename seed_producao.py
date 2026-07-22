@@ -14,6 +14,12 @@ from uuid import uuid4
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# psycopg (modo async) não suporta o ProactorEventLoop, que é o loop
+# default do asyncio no Windows — forçar SelectorEventLoop antes de
+# qualquer ligação à base de dados.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from sqlalchemy import select
 
 from app.infrastructure.database import AsyncSessionLocal, init_db
