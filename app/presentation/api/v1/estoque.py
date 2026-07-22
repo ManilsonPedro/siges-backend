@@ -362,7 +362,7 @@ async def estornar_movimento(
     return mov
 
 
-# ─── Export Excel — Kardex com cabeçalho Aquasan ─────────────────────
+# ─── Export Excel — Kardex com cabeçalho institucional ───────────────
 
 
 TIPO_LABEL = {
@@ -387,7 +387,7 @@ async def exportar_kardex_excel(
     current_user: User = Depends(get_current_user),
 ):
     """Exporta o kardex (movimentos de stock) em Excel com cabeçalho
-    institucional Aquasan + totais por tipo, no mesmo formato de
+    institucional da empresa + totais por tipo, no mesmo formato de
     'Movimentos Financeiros'."""
     # Carregar movimentos com filtros
     stmt = (select(StockMovimentoModel)

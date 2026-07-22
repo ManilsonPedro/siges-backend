@@ -22,7 +22,7 @@ async def _get_or_create(db: AsyncSession, company_id) -> CompanySettingsModel:
     result = await db.execute(select(CompanySettingsModel).where(CompanySettingsModel.company_id == company_id))
     row = result.scalar_one_or_none()
     if row is None:
-        row = CompanySettingsModel(company_id=company_id, nome="Aquasan")
+        row = CompanySettingsModel(company_id=company_id, nome="")
         db.add(row)
         await db.flush()
     return row

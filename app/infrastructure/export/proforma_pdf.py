@@ -45,7 +45,7 @@ _FORMA_LABEL = {
 }
 
 
-def render_proforma_html(venda: VendaModel, *, empresa_nome: str = "Aquasan Angola",
+def render_proforma_html(venda: VendaModel, *, empresa_nome: str = "",
                          cliente_nome: Optional[str] = None,
                          armazem_nome: Optional[str] = None) -> str:
 
