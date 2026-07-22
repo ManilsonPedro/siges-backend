@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: siges-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements-prod.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DB_URL
+        sync: false          # Preencher no dashboard com a connection string do Neon
+      - key: JWT_SECRET_KEY
+        generateValue: true  # Render gera automaticamente
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CORS_ORIGINS
+        sync: false          # Preencher com a URL da Vercel: https://siges-frontend.vercel.app
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: JWT_REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      # ─── Storage (Backblaze B2) ────────────────────────────────
+      - key: STORAGE_TYPE
+        value: b2
+      - key: B2_KEY_ID
+        sync: false          # Preencher com a Application Key ID do bucket B2
+      - key: B2_APP_KEY
+        sync: false          # Preencher com a Application Key do bucket B2
+      - key: B2_BUCKET
+        sync: false          # Nome do bucket criado no Backblaze
+      - key: B2_ENDPOINT
+        sync: false          # Ex.: https://s3.us-east-005.backblazeb2.com
+      - key: B2_REGION
+        sync: false          # Ex.: us-east-005
+      # ─── SMTP (Brevo) ────────────────────────────────────────────
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false          # Preencher com o utilizador SMTP do Brevo
+      - key: SMTP_PASSWORD
+        sync: false          # Preencher com a chave SMTP (API key) do Brevo
+      - key: SMTP_FROM_EMAIL
+        sync: false          # Ex.: noreply@teudominio.com
+      - key: SMTP_FROM_NAME
+        value: SIGES BI JENNOS
+      - key: APP_BASE_URL
+        sync: false          # Preencher com a URL da Vercel após o primeiro deploy
