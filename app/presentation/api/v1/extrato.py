@@ -89,9 +89,9 @@ async def _get_company_settings(db: AsyncSession, company_id) -> dict:
     r = await db.execute(select(CompanySettingsModel).where(CompanySettingsModel.company_id == company_id))
     cs = r.scalar_one_or_none()
     if not cs:
-        return {"nome": "Financ-BI Jennos", "logo_path": None}
+        return {"nome": "SIGES BI JENNOS", "logo_path": None}
     return {
-        "nome": cs.nome or "Financ-BI Jennos",
+        "nome": cs.nome or "SIGES BI JENNOS",
         "nif": cs.nif, "morada": cs.morada, "telefone": cs.telefone,
         "email": cs.email, "logo_path": cs.logo_path,
     }

@@ -118,7 +118,7 @@ def render_extrato_pdf(
           {f'<img src="{logo_uri}" style="max-width: 50mm; max-height: 25mm;" />' if logo_uri else ''}
         </td>
         <td style="vertical-align: top;">
-          <div class="company-name">{empresa.get('nome') or 'Financ-BI Jennos'}</div>
+          <div class="company-name">{empresa.get('nome') or 'SIGES BI JENNOS'}</div>
           <div class="company-info">
             {('NIF: ' + empresa['nif']) if empresa.get('nif') else ''}
             {(' · ' + empresa['morada']) if empresa.get('morada') else ''}<br/>

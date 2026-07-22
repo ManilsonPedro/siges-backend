@@ -28,7 +28,7 @@ async def aplicar_cabecalho_empresa(
     cs = r.scalar_one_or_none()
 
     # Linha 1: Nome da empresa
-    nome = (cs.nome if cs and cs.nome else "Financ-BI Jennos")
+    nome = (cs.nome if cs and cs.nome else "SIGES BI JENNOS")
     cell = ws.cell(row=1, column=2, value=nome)
     cell.font = Font(bold=True, size=16, color="0B3B6F")
     ws.merge_cells(start_row=1, start_column=2, end_row=1, end_column=n_colunas)

@@ -61,7 +61,7 @@ async def send_email(to: str, subject: str, html: str, text: Optional[str] = Non
     )
 
 
-def render_password_reset_email(*, user_name: str, reset_link: str, company_name: str = "Financ-BI Jennos") -> tuple[str, str]:
+def render_password_reset_email(*, user_name: str, reset_link: str, company_name: str = "SIGES BI JENNOS") -> tuple[str, str]:
     """Devolve (html, text) do email de recuperação."""
     html = f"""<!DOCTYPE html>
 <html>

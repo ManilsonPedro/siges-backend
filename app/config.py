@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     # App
-    app_name: str = "Financ-BI"
+    app_name: str = "SIGES BI JENNOS"
     app_version: str = "1.0.0"
     debug: bool = False
     environment: str = "development"
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
-    smtp_from_name: str = "Financ-BI Jennos"
+    smtp_from_name: str = "SIGES BI JENNOS"
     app_base_url: str = "http://localhost:3000"
 
     # Celery (não utilizado actualmente)
