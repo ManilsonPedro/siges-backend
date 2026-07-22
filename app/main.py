@@ -44,6 +44,8 @@ from app.presentation.api.v1 import (
     operacoes_combustivel_router,
     operacoes_lavagem_router,
     operacoes_agua_router,
+    portal_auth_router,
+    portal_reservas_router,
     restauracao_base_router,
     restauracao_bar_router,
     restauracao_restaurante_router,
@@ -283,6 +285,8 @@ app.include_router(operacoes_estacao_router, prefix="/api/v1/operacoes/estacao",
 app.include_router(operacoes_combustivel_router, prefix="/api/v1/operacoes/combustivel", tags=["Operações · Combustível"])
 app.include_router(operacoes_lavagem_router, prefix="/api/v1/operacoes/lavagem", tags=["Operações · Lavagem"])
 app.include_router(operacoes_agua_router, prefix="/api/v1/operacoes/agua", tags=["Operações · Água"])
+app.include_router(portal_auth_router, prefix="/api/v1/portal/auth", tags=["Portal do Cliente · Auth"])
+app.include_router(portal_reservas_router, prefix="/api/v1/portal", tags=["Portal do Cliente · Reservas"])
 app.include_router(restauracao_base_router, prefix="/api/v1/restauracao", tags=["Restauração · Base"])
 app.include_router(restauracao_bar_router, prefix="/api/v1/restauracao/bar", tags=["Restauração · Bar"])
 app.include_router(restauracao_restaurante_router, prefix="/api/v1/restauracao/restaurante", tags=["Restauração · Restaurante"])

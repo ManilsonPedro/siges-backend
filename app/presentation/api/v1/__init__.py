@@ -35,6 +35,8 @@ from app.presentation.api.v1.operacoes_estacao import router as operacoes_estaca
 from app.presentation.api.v1.operacoes_combustivel import router as operacoes_combustivel_router
 from app.presentation.api.v1.operacoes_lavagem import router as operacoes_lavagem_router
 from app.presentation.api.v1.operacoes_agua import router as operacoes_agua_router
+from app.presentation.api.v1.portal_auth import router as portal_auth_router
+from app.presentation.api.v1.portal_reservas import router as portal_reservas_router
 from app.presentation.api.v1.restauracao_base import router as restauracao_base_router
 from app.presentation.api.v1.restauracao_bar import router as restauracao_bar_router
 from app.presentation.api.v1.restauracao_restaurante import router as restauracao_restaurante_router
@@ -90,6 +92,8 @@ __all__ = [
     "operacoes_combustivel_router",
     "operacoes_lavagem_router",
     "operacoes_agua_router",
+    "portal_auth_router",
+    "portal_reservas_router",
     "restauracao_base_router",
     "restauracao_bar_router",
     "restauracao_restaurante_router",

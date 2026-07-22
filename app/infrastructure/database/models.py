@@ -161,6 +161,27 @@ class ClienteModel(Base):
     fornecedor_id = Column(String(36), nullable=True)
 
 
+class ContaClienteModel(Base):
+    """Conta de acesso ao Portal do Cliente (FrontOffice).
+
+    Deliberadamente separada de UserModel: nunca deve ser aceite pelas
+    dependencies de RBAC interno (get_current_user), e vice-versa —
+    tokens JWT usam "type" distinto (cliente_access/cliente_refresh).
+    """
+    __tablename__ = "contas_cliente"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    cliente_id = Column(String(36), nullable=False, index=True)  # liga a ClienteModel
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    telefone = Column(String(20), nullable=True)
+    hashed_password = Column(String(255), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+    email_verificado = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ConceptoModel(Base):
     __tablename__ = "conceitos"
 

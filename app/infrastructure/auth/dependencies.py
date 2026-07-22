@@ -149,8 +149,46 @@ def require_permission(codigo: str):
     return _checker
 
 
+# ────────────────────────────────────────────────────────────────────
+# Portal do Cliente (FrontOffice) — conta separada de UserModel/RBAC.
+# Nunca aceitar um token de colaborador aqui, nem um token de cliente
+# em get_current_user (o "type" do JWT distingue os dois mundos).
+# ────────────────────────────────────────────────────────────────────
+
+async def get_current_cliente(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.infrastructure.database.models import ContaClienteModel
+    from sqlalchemy import select
+
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido ou expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    payload = decode_token(credentials.credentials)
+    if not payload or payload.get("type") != "cliente_access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido ou expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    conta_id = payload.get("sub")
+    if not conta_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+
+    r = await db.execute(select(ContaClienteModel).where(ContaClienteModel.id == UUID(conta_id)))
+    conta = r.scalar_one_or_none()
+    if not conta or not conta.activo:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Conta não encontrada ou inactiva")
+    return conta
+
+
 __all__ = [
     "get_current_user",
     "require_admin", "require_financeiro", "require_assistente",
     "require_permission",
+    "get_current_cliente",
 ]
