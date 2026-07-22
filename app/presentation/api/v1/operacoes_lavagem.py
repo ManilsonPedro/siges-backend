@@ -795,4 +795,147 @@ async def get_fotos(
     return {"fotos_antes": [], "fotos_depois": []}
 
 
+# ─── Walk-in e Fila de Prioridade (D1, D2) ───────────────────────────
+
+
+class WalkinCreateDTO(BaseModel):
+    """Criação rápida de ordem para cliente sem reserva/telefone/portal.
+    cliente_id é opcional — aceita nome/matrícula livres quando o cliente
+    ainda não existe no CRM (D1: mesma entidade OrdemLavagem, só muda
+    a origem)."""
+    nome_cliente: Optional[str] = None
+    telefone_cliente: Optional[str] = None
+    matricula: str = Field(..., min_length=1, max_length=20)
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    cor: Optional[str] = None
+    categoria_veiculo_id: Optional[UUID] = None
+    cliente_id: Optional[UUID] = None
+    tipo_lavagem_id: UUID
+    extra_ids: List[UUID] = Field(default_factory=list)
+
+
+@router.post("/ordens/walkin", response_model=OrdemResponseDTO, status_code=201)
+async def criar_walkin(
+    req: Request,
+    body: WalkinCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
+):
+    """Cria uma OrdemLavagem para atendimento imediato (sem reserva prévia),
+    origem=backoffice_walkin. Regista/reaproveita a viatura pela matrícula
+    para não duplicar registos do mesmo veículo em walk-ins repetidos."""
+    vr = await db.execute(
+        select(ViaturaModel)
+        .where(ViaturaModel.company_id == current_user.company_id)
+        .where(ViaturaModel.matricula == body.matricula)
+        .where(ViaturaModel.deleted_at.is_(None))
+    )
+    viatura = vr.scalar_one_or_none()
+    if not viatura:
+        viatura = ViaturaModel(
+            id=uuid4(), company_id=current_user.company_id,
+            cliente_id=str(body.cliente_id) if body.cliente_id else None,
+            matricula=body.matricula, marca=body.marca, modelo=body.modelo,
+            cor=body.cor, categoria_veiculo_id=body.categoria_veiculo_id,
+        )
+        db.add(viatura)
+        await db.flush()
+    elif body.categoria_veiculo_id and not viatura.categoria_veiculo_id:
+        viatura.categoria_veiculo_id = body.categoria_veiculo_id
+
+    _, extras_aplicados = await _calcular_preco_ordem(
+        db, tipo_lavagem_id=body.tipo_lavagem_id, categoria_veiculo_id=viatura.categoria_veiculo_id,
+        extra_ids=body.extra_ids,
+    )
+
+    m = OrdemLavagemModel(
+        id=uuid4(), company_id=current_user.company_id,
+        cliente_id=str(body.cliente_id) if body.cliente_id else None,
+        viatura_id=str(viatura.id), tipo_lavagem_id=body.tipo_lavagem_id,
+        estado="agendada", origem="backoffice_walkin",
+    )
+    db.add(m)
+    await db.flush()
+
+    for extra_id, preco_aplicado in extras_aplicados:
+        db.add(OrdemLavagemExtraModel(
+            id=uuid4(), ordem_lavagem_id=m.id, extra_id=extra_id, preco_aplicado=preco_aplicado,
+        ))
+
+    await write_audit(
+        db, current_user.id, current_user.company_id,
+        "criada_walkin", "ordem_lavagem", m.id,
+        dados_novos={"matricula": body.matricula, "nome_cliente": body.nome_cliente},
+        ip_address=req.client.host if req.client else None,
+    )
+    await db.commit()
+    return await _to_response(db, m)
+
+
+class FilaItemDTO(BaseModel):
+    ordem_id: UUID
+    origem: str
+    prioridade: int  # 1 = reserva na janela imediata, 2 = próxima reserva agendada, 3 = walk-in
+    matricula: Optional[str] = None
+    tipo_lavagem_nome: str
+    slot_hora: Optional[datetime] = None
+    espera_desde: datetime
+
+
+@router.get("/fila-atendimento", response_model=List[FilaItemDTO])
+async def fila_atendimento(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    """Fila ordenada por prioridade (D2):
+      1. Reserva com slot dentro dos próximos 15 min (ou já na janela ±15min)
+      2. Próxima reserva agendada no tempo (qualquer box)
+      3. Walk-in mais antigo (por created_at), sem reserva/slot
+
+    Nunca um walk-in ultrapassa uma reserva confirmada dentro da janela.
+    """
+    r = await db.execute(
+        select(OrdemLavagemModel, TipoLavagemModel, SlotLavagemModel)
+        .join(TipoLavagemModel, TipoLavagemModel.id == OrdemLavagemModel.tipo_lavagem_id)
+        .outerjoin(SlotLavagemModel, SlotLavagemModel.id == OrdemLavagemModel.slot_id)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.estado.in_(["agendada", "confirmada"]))
+    )
+    rows = r.all()
+
+    agora = datetime.utcnow()
+    janela = timedelta(minutes=15)
+    itens: List[FilaItemDTO] = []
+
+    for ordem, tipo, slot in rows:
+        matricula = None
+        if ordem.viatura_id:
+            vr = await db.execute(select(ViaturaModel.matricula).where(ViaturaModel.id == UUID(ordem.viatura_id)))
+            row = vr.first()
+            matricula = row[0] if row else None
+
+        if slot is not None:
+            prioridade = 1 if (slot.data_hora_inicio - janela <= agora <= slot.data_hora_inicio + janela) else 2
+            slot_hora = slot.data_hora_inicio
+        else:
+            prioridade = 3
+            slot_hora = None
+
+        itens.append(FilaItemDTO(
+            ordem_id=ordem.id, origem=ordem.origem, prioridade=prioridade,
+            matricula=matricula, tipo_lavagem_nome=tipo.nome,
+            slot_hora=slot_hora, espera_desde=ordem.created_at,
+        ))
+
+    # Ordenação: prioridade asc; dentro de prioridade 1/2 por slot_hora asc;
+    # dentro de prioridade 3 (walk-in) por espera_desde asc (mais antigo primeiro).
+    itens.sort(key=lambda i: (
+        i.prioridade,
+        i.slot_hora or datetime.max,
+        i.espera_desde,
+    ))
+    return itens
+
+
 __all__ = ["router"]
