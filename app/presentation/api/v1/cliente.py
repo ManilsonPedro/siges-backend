@@ -1,11 +1,17 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from app.application.dtos import ClienteCreateDTO, ClienteUpdateDTO, ClienteResponseDTO
 from app.infrastructure.database import get_db
+from app.infrastructure.database.models import VendaModel
 from app.infrastructure.repositories import ClienteRepository
 from app.infrastructure.auth.dependencies import get_current_user
 from app.infrastructure.audit import write_audit
@@ -31,6 +37,82 @@ def _cli_dict(c) -> dict:
 async def list_clientes(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     repo = ClienteRepository(db)
     return await repo.get_all(current_user.company_id)
+
+
+# ─── Histórico Comercial e Conta Corrente ────────────────────────────
+# Agregações reais sobre VendaModel/VendaPagamentoModel do próprio cliente
+# — sem qualquer sync externo (ver PROMPT_SISTEMA_SIGES_SPRINTS.md, Sprint 1).
+# Registadas antes de GET /{id} para não serem capturadas pelo path param.
+
+
+class HistoricoClienteDTO(BaseModel):
+    total_compras: int
+    total_gasto: Decimal
+    ultima_compra: Optional[datetime] = None
+    produto_mais_comprado: Optional[str] = None
+    qtd_produto_mais_comprado: Decimal = Decimal("0")
+    ultima_fatura: Optional[str] = None
+
+
+class HistoricoClienteResumoDTO(HistoricoClienteDTO):
+    cliente_id: UUID
+    cliente_nome: str
+
+
+def _agregar_historico(vendas: List[VendaModel]) -> HistoricoClienteDTO:
+    if not vendas:
+        return HistoricoClienteDTO(total_compras=0, total_gasto=Decimal("0"))
+
+    total_gasto = sum((Decimal(v.total_liquido) for v in vendas), Decimal("0"))
+
+    qtd_por_produto: dict[str, Decimal] = {}
+    for v in vendas:
+        for ln in v.linhas:
+            qtd_por_produto[ln.nome_snapshot] = qtd_por_produto.get(ln.nome_snapshot, Decimal("0")) + Decimal(ln.quantidade)
+    produto_top = max(qtd_por_produto, key=qtd_por_produto.get) if qtd_por_produto else None
+
+    ultima = vendas[0]  # vendas já vem ordenada por data desc
+    return HistoricoClienteDTO(
+        total_compras=len(vendas),
+        total_gasto=total_gasto,
+        ultima_compra=ultima.data,
+        produto_mais_comprado=produto_top,
+        qtd_produto_mais_comprado=qtd_por_produto.get(produto_top, Decimal("0")) if produto_top else Decimal("0"),
+        ultima_fatura=ultima.numero_fatura_interna or ultima.numero_proforma,
+    )
+
+
+@router.get("/historico-comercial", response_model=List[HistoricoClienteResumoDTO])
+async def historico_comercial_geral(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resumo de compras por cliente — só clientes com pelo menos uma venda concluída."""
+    repo = ClienteRepository(db)
+    clientes = await repo.get_all(current_user.company_id)
+
+    r = await db.execute(
+        select(VendaModel)
+        .options(selectinload(VendaModel.linhas))
+        .where(VendaModel.company_id == current_user.company_id)
+        .where(VendaModel.estado == "concluida")
+        .order_by(VendaModel.data.desc())
+    )
+    vendas_por_cliente: dict[str, List[VendaModel]] = {}
+    for v in r.scalars().all():
+        if v.cliente_id:
+            vendas_por_cliente.setdefault(v.cliente_id, []).append(v)
+
+    out: List[HistoricoClienteResumoDTO] = []
+    for c in clientes:
+        vendas = vendas_por_cliente.get(str(c.id))
+        if not vendas:
+            continue
+        resumo = _agregar_historico(vendas)
+        out.append(HistoricoClienteResumoDTO(cliente_id=c.id, cliente_nome=c.nome, **resumo.model_dump()))
+
+    out.sort(key=lambda x: x.total_gasto, reverse=True)
+    return out
 
 
 @router.get("/{id}", response_model=ClienteResponseDTO)
@@ -168,6 +250,81 @@ async def tornar_cliente_fornecedor(
     )
     await db.commit()
     return {"fornecedor_id": str(fornecedor_id), "cliente_id": str(id)}
+
+
+async def _load_cliente_da_empresa(db: AsyncSession, id: UUID, current_user: User) -> Cliente:
+    repo = ClienteRepository(db)
+    c = await repo.get_by_id(id)
+    if not c or c.company_id != current_user.company_id:
+        raise HTTPException(404, "Cliente não encontrado")
+    return c
+
+
+@router.get("/{id}/historico", response_model=HistoricoClienteDTO)
+async def historico_cliente(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _load_cliente_da_empresa(db, id, current_user)
+
+    r = await db.execute(
+        select(VendaModel)
+        .options(selectinload(VendaModel.linhas))
+        .where(VendaModel.company_id == current_user.company_id)
+        .where(VendaModel.cliente_id == str(id))
+        .where(VendaModel.estado == "concluida")
+        .order_by(VendaModel.data.desc())
+    )
+    return _agregar_historico(list(r.scalars().all()))
+
+
+class LancamentoContaCorrenteDTO(BaseModel):
+    id: UUID
+    data: datetime
+    documento: str
+    descricao: str
+    debito: Decimal
+    credito: Decimal
+    saldo: Decimal
+
+
+@router.get("/{id}/conta-corrente", response_model=List[LancamentoContaCorrenteDTO])
+async def conta_corrente_cliente(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _load_cliente_da_empresa(db, id, current_user)
+
+    r = await db.execute(
+        select(VendaModel)
+        .options(selectinload(VendaModel.pagamentos))
+        .where(VendaModel.company_id == current_user.company_id)
+        .where(VendaModel.cliente_id == str(id))
+        .where(VendaModel.estado == "concluida")
+        .order_by(VendaModel.data)
+    )
+    vendas = list(r.scalars().all())
+
+    eventos: List[tuple] = []
+    for v in vendas:
+        doc = v.numero_fatura_interna or v.numero_proforma or str(v.id)[:8]
+        eventos.append((v.data, v.id, doc, "Venda", Decimal(v.total_liquido), Decimal("0")))
+        for p in v.pagamentos:
+            eventos.append((p.data, p.id, doc, f"Pagamento ({p.forma})", Decimal("0"), Decimal(p.valor)))
+
+    eventos.sort(key=lambda e: e[0])
+
+    saldo = Decimal("0")
+    lancamentos: List[LancamentoContaCorrenteDTO] = []
+    for data, ev_id, doc, descricao, debito, credito in eventos:
+        saldo += debito - credito
+        lancamentos.append(LancamentoContaCorrenteDTO(
+            id=ev_id, data=data, documento=doc, descricao=descricao,
+            debito=debito, credito=credito, saldo=saldo,
+        ))
+    return lancamentos
 
 
 __all__ = ["router"]

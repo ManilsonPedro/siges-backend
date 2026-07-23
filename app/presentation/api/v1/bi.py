@@ -20,12 +20,16 @@ from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
     CategoriaVeiculoModel,
+    ClienteModel,
     ColaboradorModel,
     ConsumoAguaModel,
+    ControloQualidadeLavagemModel,
+    ExtraLavagemModel,
     FaltaModel,
     FeriasModel,
     FundoModel,
     MovimentoFinanceiroModel,
+    OrdemLavagemExtraModel,
     OrdemLavagemModel,
     PedidoOnlineModel,
     ProdutoModel,
@@ -134,6 +138,83 @@ async def dashboard_operacional(
     ordens_hoje = list(lhr.scalars().all())
     walkins_hoje = sum(1 for o in ordens_hoje if o.origem == "backoffice_walkin")
     reservas_hoje = sum(1 for o in ordens_hoje if o.origem in ("portal_cliente", "backoffice_telefone"))
+    lavagens_hoje = len(ordens_hoje)
+    agendadas_hoje = sum(1 for o in ordens_hoje if o.estado in ("agendada", "confirmada"))
+    concluidas_hoje = sum(1 for o in ordens_hoje if o.estado in ("concluida", "paga"))
+
+    # Top clientes por nº de lavagens concluídas (histórico completo, não só hoje)
+    concl_r = await db.execute(
+        select(OrdemLavagemModel)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.estado.in_(["concluida", "paga"]))
+        .where(OrdemLavagemModel.cliente_id.isnot(None))
+    )
+    contagem_cliente: dict[str, int] = {}
+    for o in concl_r.scalars().all():
+        contagem_cliente[o.cliente_id] = contagem_cliente.get(o.cliente_id, 0) + 1
+    top_clientes_ids = sorted(contagem_cliente.items(), key=lambda x: x[1], reverse=True)[:5]
+    nomes_clientes: dict[str, str] = {}
+    if top_clientes_ids:
+        cr = await db.execute(
+            select(ClienteModel)
+            .where(ClienteModel.company_id == current_user.company_id)
+            .where(ClienteModel.id.in_([UUID(cid) for cid, _ in top_clientes_ids]))
+        )
+        nomes_clientes = {str(c.id): c.nome for c in cr.scalars().all()}
+    top_clientes = [
+        {"cliente_id": cid, "cliente_nome": nomes_clientes.get(cid, "Cliente sem registo"), "n_lavagens": n}
+        for cid, n in top_clientes_ids
+    ]
+
+    # Avaliação média de qualidade (controlo de qualidade, todas as ordens da empresa)
+    ordens_empresa_r = await db.execute(
+        select(OrdemLavagemModel.id).where(OrdemLavagemModel.company_id == current_user.company_id)
+    )
+    ordem_ids = [row[0] for row in ordens_empresa_r.all()]
+    avaliacao_media = 0.0
+    if ordem_ids:
+        cq_r = await db.execute(
+            select(ControloQualidadeLavagemModel.pontuacao)
+            .where(ControloQualidadeLavagemModel.ordem_lavagem_id.in_(ordem_ids))
+        )
+        pontuacoes = [float(p) for (p,) in cq_r.all()]
+        if pontuacoes:
+            avaliacao_media = sum(pontuacoes) / len(pontuacoes)
+
+    # Cancelamentos hoje e taxa de retrabalho (re-lavagens oferecidas)
+    cancelamentos_hoje = sum(1 for o in ordens_hoje if o.estado == "cancelada")
+
+    todas_r = await db.execute(
+        select(OrdemLavagemModel.estado, OrdemLavagemModel.re_lavagem_de_id)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+    )
+    todas = todas_r.all()
+    concluidas_total = sum(1 for estado, _ in todas if estado in ("concluida", "paga"))
+    re_lavagens = sum(1 for _, re_id in todas if re_id is not None)
+    taxa_retrabalho_pct = (re_lavagens / concluidas_total * 100) if concluidas_total else 0.0
+
+    # Top extras mais vendidos (por contagem, todas as ordens da empresa)
+    extras_r = await db.execute(
+        select(OrdemLavagemExtraModel.extra_id)
+        .join(OrdemLavagemModel, OrdemLavagemModel.id == OrdemLavagemExtraModel.ordem_lavagem_id)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+    )
+    contagem_extra: dict[UUID, int] = {}
+    for (extra_id,) in extras_r.all():
+        contagem_extra[extra_id] = contagem_extra.get(extra_id, 0) + 1
+    top_extras_ids = sorted(contagem_extra.items(), key=lambda x: x[1], reverse=True)[:5]
+    nomes_extras: dict[UUID, str] = {}
+    if top_extras_ids:
+        er = await db.execute(
+            select(ExtraLavagemModel)
+            .where(ExtraLavagemModel.company_id == current_user.company_id)
+            .where(ExtraLavagemModel.id.in_([eid for eid, _ in top_extras_ids]))
+        )
+        nomes_extras = {e.id: e.nome for e in er.scalars().all()}
+    top_extras = [
+        {"extra_id": str(eid), "extra_nome": nomes_extras.get(eid, "Extra sem registo"), "n_vendas": n}
+        for eid, n in top_extras_ids
+    ]
 
     br = await db.execute(
         select(BoxLavagemModel)
@@ -180,6 +261,14 @@ async def dashboard_operacional(
         "lavagem_reservas_hoje": reservas_hoje,
         "lavagem_taxa_ocupacao_boxes_pct": round(taxa_ocupacao_boxes_pct, 2),
         "lavagem_agua_por_categoria_litros": agua_por_categoria,
+        "lavagem_hoje": lavagens_hoje,
+        "lavagem_agendadas_hoje": agendadas_hoje,
+        "lavagem_concluidas_hoje": concluidas_hoje,
+        "lavagem_top_clientes": top_clientes,
+        "lavagem_avaliacao_media": round(avaliacao_media, 2),
+        "lavagem_cancelamentos_hoje": cancelamentos_hoje,
+        "lavagem_taxa_retrabalho_pct": round(taxa_retrabalho_pct, 2),
+        "lavagem_top_extras": top_extras,
     }
 
 

@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Backblaze B2 (S3-compatible)
     b2_key_id: str = ""
     b2_app_key: str = ""
-    b2_bucket: str = "financ-bi-jennos-aquasan"
+    b2_bucket: str = "siges-storage"
     b2_endpoint: str = "https://s3.us-east-005.backblazeb2.com"
     b2_region: str = "us-east-005"
 

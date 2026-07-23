@@ -14,6 +14,7 @@ from app.presentation.api.v1 import (
     fundo_router,
     movimento_router,
     relatorios_router,
+    relatorios_comercial_router,
     company_settings_router,
     search_router,
     saved_filters_router,
@@ -256,6 +257,7 @@ app.include_router(conceito_router, prefix="/api/v1/conceitos", tags=["Conceitos
 app.include_router(fundo_router, prefix="/api/v1/fundos", tags=["Fundos"])
 app.include_router(movimento_router, prefix="/api/v1/movimentos", tags=["Movimentos"])
 app.include_router(relatorios_router, prefix="/api/v1/relatorios", tags=["Relatórios"])
+app.include_router(relatorios_comercial_router, prefix="/api/v1/relatorios", tags=["Relatórios · Comercial"])
 app.include_router(company_settings_router, prefix="/api/v1/settings/company", tags=["Configurações"])
 app.include_router(search_router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(saved_filters_router, prefix="/api/v1/saved-filters", tags=["Filtros Guardados"])

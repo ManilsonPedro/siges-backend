@@ -5,6 +5,7 @@ from app.presentation.api.v1.conceito import router as conceito_router
 from app.presentation.api.v1.fundo import router as fundo_router
 from app.presentation.api.v1.movimento import router as movimento_router
 from app.presentation.api.v1.relatorios import router as relatorios_router
+from app.presentation.api.v1.relatorios_comercial import router as relatorios_comercial_router
 from app.presentation.api.v1.company_settings import router as company_settings_router
 from app.presentation.api.v1.search import router as search_router
 from app.presentation.api.v1.saved_filters import router as saved_filters_router
@@ -61,6 +62,7 @@ __all__ = [
     "fundo_router",
     "movimento_router",
     "relatorios_router",
+    "relatorios_comercial_router",
     "company_settings_router",
     "search_router",
     "saved_filters_router",
