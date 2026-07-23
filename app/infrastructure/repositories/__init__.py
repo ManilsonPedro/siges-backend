@@ -158,6 +158,7 @@ class FornecedorRepository(IFornecedorRepository):
             email=entity.email,
             endereco=entity.endereco,
             estado=entity.estado,
+            tipo_pessoa=entity.tipo_pessoa,
             cliente_id=entity.cliente_id,
         )
         self.db.add(model)
@@ -175,6 +176,8 @@ class FornecedorRepository(IFornecedorRepository):
         model.email = entity.email
         model.endereco = entity.endereco
         model.estado = entity.estado
+        if entity.tipo_pessoa is not None:
+            model.tipo_pessoa = entity.tipo_pessoa
         if entity.cliente_id is not None:
             model.cliente_id = entity.cliente_id
         model.updated_at = datetime.utcnow()
@@ -201,6 +204,7 @@ class FornecedorRepository(IFornecedorRepository):
             email=model.email,
             endereco=model.endereco,
             estado=model.estado,
+            tipo_pessoa=model.tipo_pessoa,
             created_at=model.created_at,
             updated_at=model.updated_at,
             deleted_at=model.deleted_at,

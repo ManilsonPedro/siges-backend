@@ -32,6 +32,7 @@ class Fornecedor:
     email: str = ""
     endereco: str = ""
     estado: str = "ativo"  # ativo, inativo, suspenso
+    tipo_pessoa: Optional[str] = None  # singular | empresa
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
     deleted_at: Optional[datetime] = None

@@ -26,6 +26,9 @@ MODULOS = [
     "migrar_dashboard_lavagem",
     "migrar_dashboard_lavagem_fase4_5",
     "migrar_dashboard_lavagem_fase6",
+    "migrar_gestao_agua_fase1_2",
+    "migrar_gestao_agua_fase3_8",
+    "migrar_gestao_agua_fase4",
 ]
 
 

@@ -37,6 +37,7 @@ class FornecedorBaseDTO(BaseModel):
     email: Optional[EmailStr] = None
     endereco: Optional[str] = Field(None, max_length=500)
     estado: str = Field(default="ativo", pattern="^(ativo|inativo|suspenso)$")
+    tipo_pessoa: Optional[str] = Field(None, pattern="^(singular|empresa)$")
 
 
 class FornecedorCreateDTO(FornecedorBaseDTO):
@@ -50,6 +51,7 @@ class FornecedorUpdateDTO(BaseModel):
     email: Optional[EmailStr] = None
     endereco: Optional[str] = Field(None, max_length=500)
     estado: Optional[str] = Field(None, pattern="^(ativo|inativo|suspenso)$")
+    tipo_pessoa: Optional[str] = Field(None, pattern="^(singular|empresa)$")
 
 
 class FornecedorResponseDTO(FornecedorBaseDTO):

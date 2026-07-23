@@ -85,6 +85,7 @@ PERMISSOES = [
     # ─── Operações — Gestão da Água ───
     ("operacoes.agua.view", "Operações", "operacoes_agua", "view", "Ver tanques de água/indicadores"),
     ("operacoes.agua.registar_leitura", "Operações", "operacoes_agua", "registar_leitura", "Registar leitura/consumo de água"),
+    ("operacoes.agua.gerir_abastecimentos", "Operações", "operacoes_agua", "gerir_abastecimentos", "Registar e aprovar abastecimentos de água"),
     # ─── Restauração ───
     ("restauracao.view", "Restauração", "restauracao", "view", "Ver mesas/comandas/itens de menu"),
     ("restauracao.gerir_menu", "Restauração", "restauracao", "gerir_menu", "Gerir mesas e itens de menu"),
@@ -187,7 +188,7 @@ GRUPOS_DEFAULT = [
         "ecommerce.view", "ecommerce.gerir_config", "ecommerce.gerir_cupoes", "ecommerce.processar_pedidos",
         "operacoes.estacao.view", "operacoes.estacao.gerir_equipamentos", "operacoes.estacao.gerir_turnos",
         "operacoes.lavagem.view", "operacoes.lavagem.gerir_tipos", "operacoes.lavagem.agendar", "operacoes.lavagem.operar", "operacoes.lavagem.avaliar_qualidade",
-        "operacoes.agua.view", "operacoes.agua.registar_leitura",
+        "operacoes.agua.view", "operacoes.agua.registar_leitura", "operacoes.agua.gerir_abastecimentos",
         "restauracao.view", "restauracao.gerir_menu", "restauracao.operar_comanda", "restauracao.gerir_happy_hour",
         "restauracao.gerir_reservas", "restauracao.fechar_conta", "restauracao.gerir_combos", "restauracao.operar_producao",
         "crm.view", "crm.create", "crm.edit", "crm.delete", "crm.gerir_pipeline", "crm.gerir_fidelizacao",

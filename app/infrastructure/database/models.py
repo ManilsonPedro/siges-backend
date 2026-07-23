@@ -60,6 +60,7 @@ class FornecedorModel(Base):
     email = Column(String(255), nullable=True)
     endereco = Column(Text, nullable=True)
     estado = Column(String(50), default="ativo", index=True)
+    tipo_pessoa = Column(String(20), nullable=True)  # singular | empresa
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True, index=True)
@@ -1158,6 +1159,7 @@ class TanqueAguaModel(Base):
 
     id = Column(UUID(), primary_key=True, default=uuid4)
     company_id = Column(UUID(), nullable=False, index=True)
+    filial_id = Column(UUID(), nullable=True, index=True)
     codigo = Column(String(30), nullable=False)
     nome = Column(String(120), nullable=False)
     tipo = Column(String(20), nullable=False)  # limpa | reciclada | tratada | pluvial
@@ -1169,6 +1171,7 @@ class TanqueAguaModel(Base):
     condutividade = Column(Numeric(8, 2), nullable=True)
     tem_sensor = Column(Boolean, default=False, nullable=False)
     sensor_id = Column(String(50), nullable=True)
+    estado = Column(String(20), default="activo", nullable=False)  # activo | manutencao | inactivo
     deleted_at = Column(DateTime, nullable=True, index=True)
 
 
@@ -1185,6 +1188,54 @@ class ConsumoAguaModel(Base):
     custo_por_litro = Column(Numeric(8, 4), nullable=True)
     custo_total = Column(Numeric(12, 2), nullable=True)
     data = Column(DateTime, default=datetime.utcnow)
+
+
+class AbastecimentoAguaModel(Base):
+    """Abastecimento (entrada de fornecedor) a um tanque de água.
+
+    Ver PROMPT_GESTAO_AGUA_SPRINTS.md, Fase 3. Numeração sequencial
+    idêntica ao padrão de `numero_proforma` em caixa.py (ABA-<ano>-<seq>)."""
+    __tablename__ = "abastecimentos_agua"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    numero = Column(String(30), nullable=True, index=True)
+    tanque_agua_id = Column(UUID(), nullable=False, index=True)
+    fornecedor_id = Column(UUID(), nullable=False, index=True)
+    filial_id = Column(UUID(), nullable=True, index=True)
+    equipamento_id = Column(UUID(), nullable=True)
+    quantidade_litros = Column(Numeric(12, 2), nullable=False)
+    valor_por_litro = Column(Numeric(10, 4), nullable=False)
+    custo_total = Column(Numeric(12, 2), nullable=False)
+    metodo_pagamento = Column(String(30), nullable=True)
+    observacoes = Column(Text, nullable=True)
+    registado_por_id = Column(UUID(), nullable=False)
+    recebido_por_id = Column(UUID(), nullable=True)
+    estado = Column(String(20), default="registado", nullable=False, index=True)
+    # registado | aprovado | documentado | pago | concluido
+    data = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MovimentoTanqueAguaModel(Base):
+    """Livro de movimentos do tanque — cada alteração ao nível gera aqui um
+    registo permanente, em vez de o nível ser a única fonte de verdade.
+    Desenho espelha StockMovimentoModel. Ver Fase 8."""
+    __tablename__ = "movimentos_tanque_agua"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    tanque_agua_id = Column(UUID(), nullable=False, index=True)
+    tipo = Column(String(20), nullable=False, index=True)
+    # entrada | saida | ajuste | transferencia | perda | evaporacao | vazamento
+    quantidade_litros = Column(Numeric(12, 2), nullable=False)
+    nivel_antes = Column(Numeric(12, 2), nullable=False)
+    nivel_depois = Column(Numeric(12, 2), nullable=False)
+    referencia_tipo = Column(String(30), nullable=True)  # abastecimento | consumo | ajuste_manual
+    referencia_id = Column(UUID(), nullable=True)
+    observacoes = Column(Text, nullable=True)
+    registado_por_id = Column(UUID(), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class PromocaoModel(Base):
@@ -1480,6 +1531,35 @@ class MovimentoComentarioModel(Base):
     edited_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AnexoModel(Base):
+    """Anexo genérico com versionamento, ligado a qualquer entidade via
+    (entity_type, entity_id) — ex. abastecimento_agua. Ver
+    PROMPT_GESTAO_AGUA_SPRINTS.md, Fase 4.
+
+    Não substitui `MovimentoAnexoModel` (regras de negócio próprias do
+    fluxo financeiro — título FRxxxx/FPxxxx, side-effect de fechar
+    movimento); é o padrão a usar por Água e por módulos futuros."""
+    __tablename__ = "anexos"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False, index=True)
+    entity_id = Column(UUID(), nullable=False, index=True)
+    tipo_documento = Column(String(30), nullable=False)
+    # proforma | fatura | fatura_recibo | recibo | guia_transporte |
+    # comprovativo_pagamento | comprovativo_bancario | fotografia | outro
+    versao = Column(types.Integer, default=1, nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(100), nullable=True)
+    size_bytes = Column(types.Integer, nullable=True)
+    uploaded_by = Column(UUID(), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, index=True)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(UUID(), nullable=True)
+    delete_reason = Column(String(500), nullable=True)
 
 
 class MovimentoAnexoModel(Base):

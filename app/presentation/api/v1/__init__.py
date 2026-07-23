@@ -54,6 +54,8 @@ from app.presentation.api.v1.rh_avaliacao import router as rh_avaliacao_router
 from app.presentation.api.v1.rh_payroll import router as rh_payroll_router
 from app.presentation.api.v1.bi import router as bi_router
 from app.presentation.api.v1.bi_lavagem_avancado import router as bi_lavagem_avancado_router
+from app.presentation.api.v1.anexos import router as anexos_router
+from app.presentation.api.v1.bi_agua import router as bi_agua_router
 
 __all__ = [
     "auth_router",
@@ -112,4 +114,6 @@ __all__ = [
     "rh_payroll_router",
     "bi_router",
     "bi_lavagem_avancado_router",
+    "anexos_router",
+    "bi_agua_router",
 ]

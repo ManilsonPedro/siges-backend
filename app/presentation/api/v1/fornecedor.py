@@ -26,6 +26,7 @@ def _forn_dict(f) -> dict:
         "email": f.email,
         "endereco": f.endereco,
         "estado": f.estado,
+        "tipo_pessoa": f.tipo_pessoa,
     }
 
 
@@ -72,6 +73,7 @@ async def create_fornecedor(
         email=body.email,
         endereco=body.endereco,
         estado=body.estado,
+        tipo_pessoa=body.tipo_pessoa,
     )
     created = await repo.create(fornecedor)
     await write_audit(
@@ -111,6 +113,8 @@ async def update_fornecedor(
         fornecedor.endereco = body.endereco
     if body.estado is not None:
         fornecedor.estado = body.estado
+    if body.tipo_pessoa is not None:
+        fornecedor.tipo_pessoa = body.tipo_pessoa
     fornecedor.updated_at = datetime.utcnow()
 
     updated = await repo.update(id, fornecedor)
