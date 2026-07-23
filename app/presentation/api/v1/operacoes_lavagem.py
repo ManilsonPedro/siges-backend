@@ -1393,32 +1393,30 @@ async def fila_atendimento(
 # ─── Lembretes de reserva (Sprint 6) ─────────────────────────────────
 
 
-@router.post("/lembretes/processar")
-async def processar_lembretes(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
-):
+async def processar_lembretes_reserva(db: AsyncSession, company_id: Optional[UUID] = None) -> int:
     """Envia email de lembrete a clientes do portal com reserva nos
-    próximos 30 minutos ainda não notificados. Sem scheduler in-process
-    no backend — pensado para ser chamado por um cron externo (Task
-    Scheduler / cron-job.org) a cada poucos minutos."""
+    próximos 30 minutos ainda não notificados. Sem `current_user` — é
+    chamada tanto pelo endpoint HTTP (uma empresa) como pelo scheduler
+    in-process (todas as empresas, ver app/infrastructure/scheduler.py)."""
     from app.infrastructure.database.models import ContaClienteModel
     from app.infrastructure.email import send_email
 
     agora = datetime.utcnow()
     janela_fim = agora + timedelta(minutes=30)
 
-    r = await db.execute(
+    stmt = (
         select(OrdemLavagemModel, SlotLavagemModel, TipoLavagemModel)
         .join(SlotLavagemModel, SlotLavagemModel.id == OrdemLavagemModel.slot_id)
         .join(TipoLavagemModel, TipoLavagemModel.id == OrdemLavagemModel.tipo_lavagem_id)
-        .where(OrdemLavagemModel.company_id == current_user.company_id)
         .where(OrdemLavagemModel.origem == "portal_cliente")
         .where(OrdemLavagemModel.estado.in_(["agendada", "confirmada"]))
         .where(OrdemLavagemModel.lembrete_enviado.is_(False))
         .where(SlotLavagemModel.data_hora_inicio >= agora)
         .where(SlotLavagemModel.data_hora_inicio <= janela_fim)
     )
+    if company_id:
+        stmt = stmt.where(OrdemLavagemModel.company_id == company_id)
+    r = await db.execute(stmt)
     rows = r.all()
 
     enviados = 0
@@ -1446,7 +1444,20 @@ async def processar_lembretes(
             continue  # falha de envio não deve travar o processamento dos restantes
 
     await db.commit()
+    return enviados
+
+
+@router.post("/lembretes/processar")
+async def processar_lembretes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
+):
+    """Disparo manual (uma empresa) — mantido para diagnóstico/legado.
+    Em produção o disparo automático é feito pelo scheduler in-process
+    (app/infrastructure/scheduler.py), a cada 5 minutos, para todas as
+    empresas."""
+    enviados = await processar_lembretes_reserva(db, current_user.company_id)
     return {"lembretes_enviados": enviados}
 
 
-__all__ = ["router"]
+__all__ = ["router", "processar_lembretes_reserva"]

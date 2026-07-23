@@ -194,7 +194,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception(f"Erro inesperado no bootstrap: {e}")
     logger.info("Base de dados inicializada")
+
+    from app.infrastructure.scheduler import iniciar_scheduler, parar_scheduler
+    iniciar_scheduler()
+
     yield
+
+    parar_scheduler()
     logger.info("Encerrando aplicação...")
 
 
