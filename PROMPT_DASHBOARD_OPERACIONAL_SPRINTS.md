@@ -125,15 +125,22 @@ A empresa tem várias unidades físicas — Fase 5 implementada.
 
 ---
 
-## Fase 6 — Indicadores que exigem novo conceito de negócio (fora do schema actual)
+## Fase 6 — No-Show, Heatmap, LTV, Cross-selling (Concluída)
 
-Estes itens do pedido original não têm nenhum dado subjacente hoje — são **funcionalidades novas**, não relatórios sobre dados existentes:
+**Decisão de negócio confirmada:** No-Show modelado como flag booleana `no_show` sobre o estado `cancelada` existente (não um estado novo), distinguindo não-comparência de cancelamento activo do cliente.
 
-- **Heatmap de Movimento**: exige agregação por hora×dia-da-semana — depende da Fase 2 (timestamps).
-- **No-Show** (distinto de cancelamento): exige um estado/flag próprio para "cliente reservou e não apareceu", que hoje não existe (só há `cancelada`, que pode ser cancelamento activo do cliente ou não-comparência — sem distinção). Adicionar `estado = "no_show"` ou flag booleana se este KPI for aprovado.
-- **Conversão / Cross-selling** (lavagem → loja → restaurante → bar): exige cruzar `OrdemLavagemModel.cliente_id` com `VendaModel`/`ComandaModel` do mesmo cliente no mesmo dia — possível hoje sem campos novos, mas é uma agregação cara (múltiplos joins); especificar como endpoint dedicado, não no dashboard principal.
-- **Valor por Cliente / Lifetime Value**: parcialmente coberto por `GET /clientes/historico-comercial` (Sprint 1 de `PROMPT_SISTEMA_SIGES_SPRINTS.md`) — falta só expor "receita total / nº clientes" como indicador agregado no dashboard executivo.
-- **Previsão de Procura (IA)**: fora de escopo deste ciclo — exige decisão de negócio sobre que modelo/serviço usar (não implementar sem essa decisão explícita).
+### O que foi implementado
+
+- `OrdemLavagemModel.no_show` (Boolean, default False) — `POST /operacoes/lavagem/ordens/{id}/no-show` (`marcar_no_show`): permitido apenas em `agendada`/`confirmada`, liberta o slot e marca `estado=cancelada, no_show=True`.
+- `GET /bi/dashboards/operacional` → `lavagem_no_show_hoje`: contagem de não comparências do dia.
+- `bi_lavagem_avancado.py` (novo router, prefixo `/api/v1/bi`):
+  - `GET /lavagem/heatmap-movimento?dias=30` — agregação de check-ins por (dia da semana, hora).
+  - `GET /lavagem/valor-por-cliente` — lifetime value por cliente sobre `preco_total_snapshot`.
+  - `GET /lavagem/cross-selling` — % de clientes de lavagem que também compraram em loja/restaurante/bar no mesmo dia.
+- Frontend: `bi-lavagem-avancado.service.ts` (novo) consome os 3 endpoints; `dashboard/operacoes/lavagem/fila` ganhou botão "Não compareceu" (oculto para walk-ins); `dashboard/relatorios/executivo` ganhou secção "Analytics Avançado · Lavagem" com heatmap visual (grid dia×hora), top clientes por LTV, e indicadores de cross-selling; card "Não Comparências Hoje" adicionado à secção de Operações.
+- **Previsão de Procura (IA)**: mantida fora de escopo — exige decisão de negócio sobre modelo/serviço a usar; não implementar sem pedido explícito.
+
+**Critério de aceitação:** marcar uma reserva como no-show e confirmar que `lavagem_no_show_hoje` incrementa e o slot é libertado; confirmar que o heatmap reflecte os horários reais de check-in; confirmar que o LTV por cliente soma `preco_total_snapshot` das lavagens concluídas; confirmar que a taxa de cross-selling só considera clientes com lavagem E compra no mesmo dia.
 
 ---
 
@@ -149,7 +156,7 @@ Fase 3 (concluída: ticket médio/receita — receita por box/equipa/serviço ai
 Fase 4 (concluída: produtividade individual via colaborador_responsavel_id, opcional)
 Fase 5 (concluída: entidade Filial + comparativo entre unidades)
    ↓
-Fase 6 (heatmap, cross-sell)       — construir sobre as fases anteriores já maduras
+Fase 6 (concluída: no-show, heatmap, LTV, cross-sell)
 IA de previsão                     — fora de escopo até decisão de negócio explícita
 ```
 

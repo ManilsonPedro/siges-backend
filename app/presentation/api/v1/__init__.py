@@ -53,6 +53,7 @@ from app.presentation.api.v1.rh_tempo import router as rh_tempo_router
 from app.presentation.api.v1.rh_avaliacao import router as rh_avaliacao_router
 from app.presentation.api.v1.rh_payroll import router as rh_payroll_router
 from app.presentation.api.v1.bi import router as bi_router
+from app.presentation.api.v1.bi_lavagem_avancado import router as bi_lavagem_avancado_router
 
 __all__ = [
     "auth_router",
@@ -110,4 +111,5 @@ __all__ = [
     "rh_avaliacao_router",
     "rh_payroll_router",
     "bi_router",
+    "bi_lavagem_avancado_router",
 ]

@@ -62,6 +62,7 @@ from app.presentation.api.v1 import (
     rh_avaliacao_router,
     rh_payroll_router,
     bi_router,
+    bi_lavagem_avancado_router,
 )
 import logging
 import os
@@ -305,6 +306,7 @@ app.include_router(rh_tempo_router, prefix="/api/v1/rh", tags=["RH · Tempo"])
 app.include_router(rh_avaliacao_router, prefix="/api/v1/rh/avaliacao", tags=["RH · Avaliação"])
 app.include_router(rh_payroll_router, prefix="/api/v1/rh/payroll", tags=["RH · Payroll"])
 app.include_router(bi_router, prefix="/api/v1/bi", tags=["BI & Analytics"])
+app.include_router(bi_lavagem_avancado_router, prefix="/api/v1/bi", tags=["BI & Analytics · Lavagem Avançado"])
 
 uploads_path = settings.storage_path
 os.makedirs(uploads_path, exist_ok=True)

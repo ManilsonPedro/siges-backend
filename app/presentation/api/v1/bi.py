@@ -185,6 +185,7 @@ async def dashboard_operacional(
 
     # Cancelamentos hoje e taxa de retrabalho (re-lavagens oferecidas)
     cancelamentos_hoje = sum(1 for o in ordens_hoje if o.estado == "cancelada")
+    no_show_hoje = sum(1 for o in ordens_hoje if o.estado == "cancelada" and o.no_show)
 
     todas_r = await db.execute(
         select(OrdemLavagemModel.estado, OrdemLavagemModel.re_lavagem_de_id)
@@ -394,6 +395,7 @@ async def dashboard_operacional(
         "lavagem_top_clientes": top_clientes,
         "lavagem_avaliacao_media": round(avaliacao_media, 2),
         "lavagem_cancelamentos_hoje": cancelamentos_hoje,
+        "lavagem_no_show_hoje": no_show_hoje,
         "lavagem_taxa_retrabalho_pct": round(taxa_retrabalho_pct, 2),
         "lavagem_top_extras": top_extras,
         "lavagem_tempo_medio_atendimento_minutos": round(tempo_medio_atendimento_min, 1),

@@ -1055,6 +1055,7 @@ class OrdemLavagemModel(Base):
     re_lavagem_de_id = Column(UUID(), nullable=True)
     venda_id = Column(UUID(), nullable=True)
     lembrete_enviado = Column(Boolean, default=False, nullable=False)
+    no_show = Column(Boolean, default=False, nullable=False)  # cancelada por não-comparência, distinto de cancelamento activo
     # Timestamps por transição de estado — updated_at é sobrescrito a cada
     # transição, por isso não serve para medir tempo de atendimento (ver
     # PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md, Fase 2).

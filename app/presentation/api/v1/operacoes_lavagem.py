@@ -801,6 +801,7 @@ class OrdemResponseDTO(BaseModel):
     origem: str
     equipa: Optional[str] = None
     colaborador_responsavel_id: Optional[UUID] = None
+    no_show: bool = False
     agua_consumida_litros: Optional[Decimal] = None
     re_lavagem_de_id: Optional[UUID] = None
     preco_total: Optional[Decimal] = None
@@ -948,6 +949,30 @@ async def checkin(
     o.estado = "checkin"
     o.checkin_em = datetime.utcnow()
     o.updated_at = o.checkin_em
+    await db.commit()
+    return await _to_response(db, o)
+
+
+@router.post("/ordens/{id}/no-show", response_model=OrdemResponseDTO)
+async def marcar_no_show(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.operar")),
+):
+    """Cliente reservou e não apareceu (distinto de cancelamento activo,
+    ver PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md, Fase 6). Só faz sentido
+    antes do check-in — depois disso já houve comparência."""
+    o = await _load_ordem(db, id, current_user)
+    if o.estado not in ("agendada", "confirmada"):
+        raise HTTPException(400, "Só é possível marcar não-comparência antes do check-in")
+    if o.slot_id:
+        sr = await db.execute(select(SlotLavagemModel).where(SlotLavagemModel.id == o.slot_id))
+        slot = sr.scalar_one_or_none()
+        if slot:
+            slot.estado = "disponivel"
+    o.estado = "cancelada"
+    o.no_show = True
+    o.updated_at = datetime.utcnow()
     await db.commit()
     return await _to_response(db, o)
 
