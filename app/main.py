@@ -41,7 +41,6 @@ from app.presentation.api.v1 import (
     devolucoes_router,
     ecommerce_router,
     operacoes_estacao_router,
-    operacoes_combustivel_router,
     operacoes_lavagem_router,
     operacoes_agua_router,
     portal_auth_router,
@@ -169,12 +168,14 @@ async def lifespan(app: FastAPI):
             os.environ["DB_URL"] = str(settings.database_url)
 
         from migrate import run as _run_migrate
+        from migrar import run as _run_migrar_extra
         from seed_permissoes import run as _run_seed_perm
         from seed_modulos import run as _run_seed_mod
         from seed_produtos import run as _run_seed_produtos
 
         async def _bootstrap():
             await _asyncio.to_thread(_run_migrate)
+            await _asyncio.to_thread(_run_migrar_extra)
             await _asyncio.to_thread(_run_seed_perm)
             await _asyncio.to_thread(_run_seed_mod)
             await _asyncio.to_thread(_run_seed_produtos)
@@ -282,7 +283,6 @@ app.include_router(promocoes_router, prefix="/api/v1/loja/promocoes", tags=["Loj
 app.include_router(devolucoes_router, prefix="/api/v1/caixa/devolucoes", tags=["Caixa · Devoluções"])
 app.include_router(ecommerce_router, prefix="/api/v1/ecommerce", tags=["E-Commerce"])
 app.include_router(operacoes_estacao_router, prefix="/api/v1/operacoes/estacao", tags=["Operações · Estação"])
-app.include_router(operacoes_combustivel_router, prefix="/api/v1/operacoes/combustivel", tags=["Operações · Combustível"])
 app.include_router(operacoes_lavagem_router, prefix="/api/v1/operacoes/lavagem", tags=["Operações · Lavagem"])
 app.include_router(operacoes_agua_router, prefix="/api/v1/operacoes/agua", tags=["Operações · Água"])
 app.include_router(portal_auth_router, prefix="/api/v1/portal/auth", tags=["Portal do Cliente · Auth"])

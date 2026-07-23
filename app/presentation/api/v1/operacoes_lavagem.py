@@ -33,12 +33,18 @@ from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
     CategoriaVeiculoModel,
+    ConsumoAguaModel,
     ControloQualidadeLavagemModel,
+    EquipaLavagemModel,
+    EquipaMembroModel,
+    EscalaTurnoModel,
     ExtraLavagemModel,
     OrdemLavagemExtraModel,
     OrdemLavagemModel,
     SlotLavagemModel,
+    TanqueAguaModel,
     TipoLavagemModel,
+    TurnoOperacionalModel,
     ViaturaModel,
 )
 
@@ -284,6 +290,248 @@ async def create_viatura(
     return m
 
 
+# ─── Equipas e Escalas (Sprint 4) ─────────────────────────────────────
+
+
+class EquipaCreateDTO(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=120)
+    activo: bool = True
+    membro_user_ids: List[UUID] = Field(default_factory=list)
+
+
+class EquipaUpdateDTO(BaseModel):
+    nome: Optional[str] = Field(None, min_length=1, max_length=120)
+    activo: Optional[bool] = None
+
+
+class EquipaResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    nome: str
+    activo: bool
+    membro_user_ids: List[UUID] = []
+
+    class Config:
+        from_attributes = True
+
+
+async def _to_equipa_response(db: AsyncSession, e: EquipaLavagemModel) -> EquipaResponseDTO:
+    mr = await db.execute(select(EquipaMembroModel.user_id).where(EquipaMembroModel.equipa_id == e.id))
+    dto = EquipaResponseDTO.model_validate(e)
+    dto.membro_user_ids = [row[0] for row in mr.all()]
+    return dto
+
+
+@router.get("/equipas", response_model=List[EquipaResponseDTO])
+async def list_equipas(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    r = await db.execute(
+        select(EquipaLavagemModel)
+        .where(EquipaLavagemModel.company_id == current_user.company_id)
+        .where(EquipaLavagemModel.deleted_at.is_(None))
+    )
+    return [await _to_equipa_response(db, e) for e in r.scalars().all()]
+
+
+@router.post("/equipas", response_model=EquipaResponseDTO, status_code=201)
+async def create_equipa(
+    body: EquipaCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    m = EquipaLavagemModel(id=uuid4(), company_id=current_user.company_id, nome=body.nome, activo=body.activo)
+    db.add(m)
+    await db.flush()
+    for user_id in body.membro_user_ids:
+        db.add(EquipaMembroModel(id=uuid4(), equipa_id=m.id, user_id=user_id))
+    await db.commit()
+    return await _to_equipa_response(db, m)
+
+
+@router.patch("/equipas/{id}", response_model=EquipaResponseDTO)
+async def update_equipa(
+    id: UUID,
+    body: EquipaUpdateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(EquipaLavagemModel).where(EquipaLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id or m.deleted_at is not None:
+        raise HTTPException(404, "Equipa não encontrada")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(m, k, v)
+    await db.commit()
+    return await _to_equipa_response(db, m)
+
+
+@router.delete("/equipas/{id}", status_code=204)
+async def delete_equipa(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(EquipaLavagemModel).where(EquipaLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Equipa não encontrada")
+    m.deleted_at = datetime.utcnow()
+    await db.commit()
+
+
+class EquipaMembroCreateDTO(BaseModel):
+    user_id: UUID
+
+
+@router.post("/equipas/{id}/membros", response_model=EquipaResponseDTO, status_code=201)
+async def add_membro_equipa(
+    id: UUID,
+    body: EquipaMembroCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(EquipaLavagemModel).where(EquipaLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id or m.deleted_at is not None:
+        raise HTTPException(404, "Equipa não encontrada")
+    db.add(EquipaMembroModel(id=uuid4(), equipa_id=id, user_id=body.user_id))
+    await db.commit()
+    return await _to_equipa_response(db, m)
+
+
+@router.delete("/equipas/{id}/membros/{user_id}", status_code=204)
+async def remove_membro_equipa(
+    id: UUID,
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(EquipaLavagemModel).where(EquipaLavagemModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Equipa não encontrada")
+    mr = await db.execute(
+        select(EquipaMembroModel)
+        .where(EquipaMembroModel.equipa_id == id)
+        .where(EquipaMembroModel.user_id == user_id)
+    )
+    membro = mr.scalar_one_or_none()
+    if membro:
+        await db.delete(membro)
+        await db.commit()
+
+
+class EscalaCreateDTO(BaseModel):
+    equipa_id: UUID
+    box_id: UUID
+    turno_id: UUID
+    data: datetime
+    activo: bool = True
+
+
+class EscalaResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    equipa_id: UUID
+    box_id: UUID
+    turno_id: UUID
+    data: datetime
+    activo: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/escalas", response_model=List[EscalaResponseDTO])
+async def list_escalas(
+    data: Optional[datetime] = None,
+    box_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.view")),
+):
+    stmt = (
+        select(EscalaTurnoModel)
+        .where(EscalaTurnoModel.company_id == current_user.company_id)
+        .where(EscalaTurnoModel.activo.is_(True))
+    )
+    if data:
+        stmt = stmt.where(EscalaTurnoModel.data == data)
+    if box_id:
+        stmt = stmt.where(EscalaTurnoModel.box_id == box_id)
+    r = await db.execute(stmt)
+    return list(r.scalars().all())
+
+
+@router.post("/escalas", response_model=EscalaResponseDTO, status_code=201)
+async def create_escala(
+    body: EscalaCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    m = EscalaTurnoModel(id=uuid4(), company_id=current_user.company_id, **body.model_dump())
+    db.add(m)
+    await db.commit()
+    return m
+
+
+@router.delete("/escalas/{id}", status_code=204)
+async def delete_escala(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.gerir_tipos")),
+):
+    r = await db.execute(select(EscalaTurnoModel).where(EscalaTurnoModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Escala não encontrada")
+    m.activo = False
+    await db.commit()
+
+
+async def _atribuir_equipa_automatica(
+    db: AsyncSession, *, company_id: UUID, box_id: UUID,
+) -> Optional[str]:
+    """Procura a EscalaTurno para (box_id, hoje, turno correspondente à hora
+    actual) e devolve o CSV de user_id da equipa escalada, ou None se não
+    houver escala (D7: atribuição automática, nunca manual por ordem)."""
+    agora = datetime.utcnow()
+    inicio_dia = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    tr = await db.execute(
+        select(TurnoOperacionalModel).where(TurnoOperacionalModel.company_id == company_id)
+    )
+    turno_atual = None
+    hora_actual = agora.strftime("%H:%M")
+    for turno in tr.scalars().all():
+        if turno.hora_inicio <= turno.hora_fim:
+            dentro = turno.hora_inicio <= hora_actual <= turno.hora_fim
+        else:  # turno atravessa a meia-noite
+            dentro = hora_actual >= turno.hora_inicio or hora_actual <= turno.hora_fim
+        if dentro:
+            turno_atual = turno
+            break
+    if not turno_atual:
+        return None
+
+    er = await db.execute(
+        select(EscalaTurnoModel)
+        .where(EscalaTurnoModel.company_id == company_id)
+        .where(EscalaTurnoModel.box_id == box_id)
+        .where(EscalaTurnoModel.turno_id == turno_atual.id)
+        .where(EscalaTurnoModel.data == inicio_dia)
+        .where(EscalaTurnoModel.activo.is_(True))
+    )
+    escala = er.scalar_one_or_none()
+    if not escala:
+        return None
+
+    mr = await db.execute(select(EquipaMembroModel.user_id).where(EquipaMembroModel.equipa_id == escala.equipa_id))
+    user_ids = [str(row[0]) for row in mr.all()]
+    return ",".join(user_ids)
+
+
 # ─── Cálculo de preço (Sprint 1 — usado por Ordens) ──────────────────
 
 
@@ -319,6 +567,28 @@ async def _calcular_preco_ordem(
         total += Decimal(extra.preco)
 
     return total, extras_aplicados
+
+
+async def _calcular_agua_estimada(db: AsyncSession, o: OrdemLavagemModel) -> Decimal:
+    """agua_consumida_litros = TipoLavagem.agua_estimada_litros * CategoriaVeiculo.fator_agua
+    (D3, Sprint 5). Valor por omissão — o operador pode ajustar manualmente se a
+    medição real divergir (ver ConsumoDTO.agua_consumida_litros)."""
+    tr = await db.execute(select(TipoLavagemModel).where(TipoLavagemModel.id == o.tipo_lavagem_id))
+    tipo = tr.scalar_one_or_none()
+    if not tipo:
+        return Decimal("0")
+
+    fator = Decimal("1")
+    if o.viatura_id:
+        vr = await db.execute(select(ViaturaModel).where(ViaturaModel.id == UUID(o.viatura_id)))
+        viatura = vr.scalar_one_or_none()
+        if viatura and viatura.categoria_veiculo_id:
+            cr = await db.execute(select(CategoriaVeiculoModel).where(CategoriaVeiculoModel.id == viatura.categoria_veiculo_id))
+            cat = cr.scalar_one_or_none()
+            if cat:
+                fator = Decimal(cat.fator_agua)
+
+    return Decimal(tipo.agua_estimada_litros) * fator
 
 
 # ─── Tipos de Lavagem ────────────────────────────────────────────────
@@ -527,6 +797,7 @@ class OrdemResponseDTO(BaseModel):
     slot_id: Optional[UUID] = None
     estado: str
     origem: str
+    equipa: Optional[str] = None
     agua_consumida_litros: Optional[Decimal] = None
     re_lavagem_de_id: Optional[UUID] = None
     preco_total: Optional[Decimal] = None
@@ -674,6 +945,12 @@ async def iniciar(
         o.box_id = box_id
     if not o.box_id:
         raise HTTPException(400, "Início requer box atribuído")
+
+    equipa_csv = await _atribuir_equipa_automatica(db, company_id=current_user.company_id, box_id=o.box_id)
+    if not equipa_csv:
+        raise HTTPException(400, "Nenhuma equipa escalada para este box neste turno — escale uma equipa primeiro")
+    o.equipa = equipa_csv
+
     o.estado = "em_curso"
     o.updated_at = datetime.utcnow()
     br = await db.execute(select(BoxLavagemModel).where(BoxLavagemModel.id == o.box_id))
@@ -696,7 +973,26 @@ async def registar_consumo(
         raise HTTPException(400, "Só é possível registar consumo em ordens em curso")
 
     if body.agua_consumida_litros is not None:
-        o.agua_consumida_litros = body.agua_consumida_litros
+        agua_litros = body.agua_consumida_litros
+    else:
+        agua_litros = await _calcular_agua_estimada(db, o)
+    o.agua_consumida_litros = agua_litros
+
+    if agua_litros:
+        tr = await db.execute(
+            select(TanqueAguaModel)
+            .where(TanqueAguaModel.company_id == current_user.company_id)
+            .where(TanqueAguaModel.deleted_at.is_(None))
+            .order_by(TanqueAguaModel.nivel_atual_litros.desc())
+        )
+        tanque = tr.scalars().first()
+        if tanque:
+            tanque.nivel_atual_litros = max(Decimal("0"), Decimal(tanque.nivel_atual_litros) - Decimal(agua_litros))
+            db.add(ConsumoAguaModel(
+                id=uuid4(), company_id=current_user.company_id, tanque_agua_id=tanque.id,
+                litros_consumidos=Decimal(agua_litros), tipo="lavagem",
+                referencia_id=o.id, referencia_tipo="ordem_lavagem",
+            ))
 
     if body.quimicos and body.armazem_id:
         for item in body.quimicos:
@@ -936,6 +1232,65 @@ async def fila_atendimento(
         i.espera_desde,
     ))
     return itens
+
+
+# ─── Lembretes de reserva (Sprint 6) ─────────────────────────────────
+
+
+@router.post("/lembretes/processar")
+async def processar_lembretes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
+):
+    """Envia email de lembrete a clientes do portal com reserva nos
+    próximos 30 minutos ainda não notificados. Sem scheduler in-process
+    no backend — pensado para ser chamado por um cron externo (Task
+    Scheduler / cron-job.org) a cada poucos minutos."""
+    from app.infrastructure.database.models import ContaClienteModel
+    from app.infrastructure.email import send_email
+
+    agora = datetime.utcnow()
+    janela_fim = agora + timedelta(minutes=30)
+
+    r = await db.execute(
+        select(OrdemLavagemModel, SlotLavagemModel, TipoLavagemModel)
+        .join(SlotLavagemModel, SlotLavagemModel.id == OrdemLavagemModel.slot_id)
+        .join(TipoLavagemModel, TipoLavagemModel.id == OrdemLavagemModel.tipo_lavagem_id)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.origem == "portal_cliente")
+        .where(OrdemLavagemModel.estado.in_(["agendada", "confirmada"]))
+        .where(OrdemLavagemModel.lembrete_enviado.is_(False))
+        .where(SlotLavagemModel.data_hora_inicio >= agora)
+        .where(SlotLavagemModel.data_hora_inicio <= janela_fim)
+    )
+    rows = r.all()
+
+    enviados = 0
+    for ordem, slot, tipo in rows:
+        if not ordem.cliente_id:
+            continue
+        cr = await db.execute(
+            select(ContaClienteModel).where(ContaClienteModel.cliente_id == ordem.cliente_id)
+        )
+        conta = cr.scalar_one_or_none()
+        if not conta:
+            continue
+        try:
+            await send_email(
+                to=conta.email,
+                subject="Lembrete — a sua lavagem é dentro de 30 minutos",
+                html=(
+                    f"<p>A sua reserva de <b>{tipo.nome}</b> está agendada para "
+                    f"{slot.data_hora_inicio.strftime('%d/%m/%Y %H:%M')} — dentro de 30 minutos.</p>"
+                ),
+            )
+            ordem.lembrete_enviado = True
+            enviados += 1
+        except Exception:
+            continue  # falha de envio não deve travar o processamento dos restantes
+
+    await db.commit()
+    return {"lembretes_enviados": enviados}
 
 
 __all__ = ["router"]

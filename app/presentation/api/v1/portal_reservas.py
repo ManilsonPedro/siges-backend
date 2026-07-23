@@ -22,6 +22,7 @@ from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
     ContaClienteModel,
+    ControloQualidadeLavagemModel,
     ExtraLavagemModel,
     OrdemLavagemExtraModel,
     OrdemLavagemModel,
@@ -190,15 +191,25 @@ async def _to_reserva_response(db: AsyncSession, o: OrdemLavagemModel) -> Reserv
 
 @router.get("/reservas/minhas", response_model=List[ReservaResponseDTO])
 async def minhas_reservas(
+    estado: Optional[str] = None,
     conta: ContaClienteModel = Depends(get_current_cliente),
     db: AsyncSession = Depends(get_db),
 ):
-    r = await db.execute(
+    """Sem `estado`, devolve todas as ordens do cliente (comportamento
+    original preservado). Com `estado` (CSV, ex.: "concluida,paga,cancelada"),
+    filtra por esses estados — usado pelo Histórico (Sprint 7) para separar
+    activas de passadas."""
+    stmt = (
         select(OrdemLavagemModel)
         .where(OrdemLavagemModel.cliente_id == conta.cliente_id)
         .where(OrdemLavagemModel.origem == "portal_cliente")
-        .order_by(OrdemLavagemModel.created_at.desc())
     )
+    if estado:
+        estados = [e.strip() for e in estado.split(",") if e.strip()]
+        if estados:
+            stmt = stmt.where(OrdemLavagemModel.estado.in_(estados))
+    stmt = stmt.order_by(OrdemLavagemModel.created_at.desc())
+    r = await db.execute(stmt)
     return [await _to_reserva_response(db, o) for o in r.scalars().all()]
 
 
@@ -301,6 +312,109 @@ async def cancelar_reserva(
     o.updated_at = datetime.utcnow()
     await db.commit()
     return await _to_reserva_response(db, o)
+
+
+# ─── Histórico (Sprint 7) ──────────────────────────────────────────────
+
+
+class ControloQualidadeDTO(BaseModel):
+    pontuacao: int
+    observacoes: Optional[str] = None
+    data: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ReservaDetalheDTO(ReservaResponseDTO):
+    tipo_lavagem_nome: str
+    viatura_matricula: Optional[str] = None
+    viatura_marca: Optional[str] = None
+    viatura_modelo: Optional[str] = None
+    controlo_qualidade: Optional[ControloQualidadeDTO] = None
+    fotos_antes: List[str] = []
+    fotos_depois: List[str] = []
+    re_lavagem_de_id: Optional[UUID] = None
+
+
+@router.get("/reservas/{id}/detalhe", response_model=ReservaDetalheDTO)
+async def detalhe_reserva(
+    id: UUID,
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(select(OrdemLavagemModel).where(OrdemLavagemModel.id == id))
+    o = r.scalar_one_or_none()
+    if not o or o.cliente_id != conta.cliente_id:
+        raise HTTPException(404, "Reserva não encontrada")
+
+    base = await _to_reserva_response(db, o)
+
+    tr = await db.execute(select(TipoLavagemModel).where(TipoLavagemModel.id == o.tipo_lavagem_id))
+    tipo = tr.scalar_one_or_none()
+
+    viatura = None
+    if o.viatura_id:
+        vr = await db.execute(select(ViaturaModel).where(ViaturaModel.id == UUID(o.viatura_id)))
+        viatura = vr.scalar_one_or_none()
+
+    cqr = await db.execute(
+        select(ControloQualidadeLavagemModel)
+        .where(ControloQualidadeLavagemModel.ordem_lavagem_id == o.id)
+        .order_by(ControloQualidadeLavagemModel.data.desc())
+    )
+    cq = cqr.scalars().first()
+
+    return ReservaDetalheDTO(
+        **base.model_dump(),
+        tipo_lavagem_nome=tipo.nome if tipo else "",
+        viatura_matricula=viatura.matricula if viatura else None,
+        viatura_marca=viatura.marca if viatura else None,
+        viatura_modelo=viatura.modelo if viatura else None,
+        controlo_qualidade=ControloQualidadeDTO.model_validate(cq) if cq else None,
+        fotos_antes=[], fotos_depois=[],  # placeholder — ver get_fotos em operacoes_lavagem.py
+        re_lavagem_de_id=o.re_lavagem_de_id,
+    )
+
+
+class ResumoClienteDTO(BaseModel):
+    total_lavagens: int
+    valor_total_gasto: Decimal
+    tipo_lavagem_mais_frequente: Optional[str] = None
+
+
+@router.get("/reservas/minhas/resumo", response_model=ResumoClienteDTO)
+async def resumo_cliente(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(OrdemLavagemModel)
+        .where(OrdemLavagemModel.cliente_id == conta.cliente_id)
+        .where(OrdemLavagemModel.origem == "portal_cliente")
+        .where(OrdemLavagemModel.estado.in_(["concluida", "paga"]))
+    )
+    ordens = list(r.scalars().all())
+
+    if not ordens:
+        return ResumoClienteDTO(total_lavagens=0, valor_total_gasto=Decimal("0"))
+
+    valor_total = Decimal("0")
+    contagem_tipos: dict[UUID, int] = {}
+    for o in ordens:
+        resp = await _to_reserva_response(db, o)
+        valor_total += resp.preco_total or Decimal("0")
+        contagem_tipos[o.tipo_lavagem_id] = contagem_tipos.get(o.tipo_lavagem_id, 0) + 1
+
+    tipo_mais_frequente_id = max(contagem_tipos, key=contagem_tipos.get)
+    tr = await db.execute(select(TipoLavagemModel).where(TipoLavagemModel.id == tipo_mais_frequente_id))
+    tipo = tr.scalar_one_or_none()
+
+    return ResumoClienteDTO(
+        total_lavagens=len(ordens),
+        valor_total_gasto=valor_total,
+        tipo_lavagem_mais_frequente=tipo.nome if tipo else None,
+    )
 
 
 __all__ = ["router"]

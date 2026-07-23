@@ -76,11 +76,6 @@ PERMISSOES = [
     ("operacoes.estacao.view", "Operações", "operacoes_estacao", "view", "Ver áreas de serviço/equipamentos/turnos"),
     ("operacoes.estacao.gerir_equipamentos", "Operações", "operacoes_estacao", "gerir_equipamentos", "Gerir áreas de serviço e equipamentos"),
     ("operacoes.estacao.gerir_turnos", "Operações", "operacoes_estacao", "gerir_turnos", "Gerir turnos operacionais"),
-    # ─── Operações — Combustível ───
-    ("operacoes.combustivel.view", "Operações", "operacoes_combustivel", "view", "Ver tanques/bombas/abastecimentos"),
-    ("operacoes.combustivel.registar_leitura", "Operações", "operacoes_combustivel", "registar_leitura", "Registar leitura de tanque de combustível"),
-    ("operacoes.combustivel.gerir_bombas", "Operações", "operacoes_combustivel", "gerir_bombas", "Gerir tanques/bombas/bicos"),
-    ("operacoes.combustivel.ver_alertas_perda", "Operações", "operacoes_combustivel", "ver_alertas_perda", "Ver alertas de perda de combustível"),
     # ─── Operações — Lavagem Automóvel ───
     ("operacoes.lavagem.view", "Operações", "operacoes_lavagem", "view", "Ver tipos/boxes/ordens de lavagem"),
     ("operacoes.lavagem.gerir_tipos", "Operações", "operacoes_lavagem", "gerir_tipos", "Gerir tipos de lavagem e boxes"),
@@ -191,7 +186,6 @@ GRUPOS_DEFAULT = [
         "loja.view", "loja.gerir_promocoes",
         "ecommerce.view", "ecommerce.gerir_config", "ecommerce.gerir_cupoes", "ecommerce.processar_pedidos",
         "operacoes.estacao.view", "operacoes.estacao.gerir_equipamentos", "operacoes.estacao.gerir_turnos",
-        "operacoes.combustivel.view", "operacoes.combustivel.registar_leitura", "operacoes.combustivel.gerir_bombas", "operacoes.combustivel.ver_alertas_perda",
         "operacoes.lavagem.view", "operacoes.lavagem.gerir_tipos", "operacoes.lavagem.agendar", "operacoes.lavagem.operar", "operacoes.lavagem.avaliar_qualidade",
         "operacoes.agua.view", "operacoes.agua.registar_leitura",
         "restauracao.view", "restauracao.gerir_menu", "restauracao.operar_comanda", "restauracao.gerir_happy_hour",

@@ -41,7 +41,6 @@ class ArmazemResponseDTO(BaseModel):
     nome: str
     morada: Optional[str] = None
     activo: bool
-    ref_primavera: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
