@@ -24,6 +24,7 @@ MODULOS = [
     "migrar_remover_combustivel",
     "migrar_remover_primavera",
     "migrar_dashboard_lavagem",
+    "migrar_dashboard_lavagem_fase4_5",
 ]
 
 

@@ -85,37 +85,43 @@ Não implementados nesta passagem por serem "mais uma dimensão de agrupamento" 
 
 ---
 
-## Fase 4 — Requer atribuição individual (não só CSV de equipa)
+## Fase 4 — Concluída: atribuição individual (colaborador_responsavel_id)
 
-**Bloqueia:** Produtividade por Funcionário (ranking individual), Tempo Médio por Funcionário, Avaliação por Colaborador.
+**Desbloqueou:** Produtividade por Colaborador (ranking individual: nº lavagens, receita, tempo médio).
 
-### Problema actual
+### Decisão de negócio tomada
 
-`OrdemLavagemModel.equipa` é uma string CSV de `user_id` da equipa inteira escalada para o box/turno — não identifica **qual colaborador** especificamente lavou aquele carro dentro da equipa.
+Adicionar campo opcional `OrdemLavagemModel.colaborador_responsavel_id`, preenchido manualmente pelo operador — sem reestruturar o conceito de equipa colectiva (`OrdemLavagemModel.equipa` continua a existir e a ser preenchido automaticamente via `EscalaTurno`, como já era). Produtividade fica disponível **tanto colectiva (por equipa/box) quanto individual** (por colaborador, quando indicado).
 
-### Especificação (decisão de negócio necessária antes de implementar)
+### O que foi implementado
 
-Duas opções, a escolher com o utilizador antes deste sprint avançar:
-1. Manter equipa colectiva (como hoje) e reportar produtividade só ao nível de equipa/box, nunca individual.
-2. Adicionar um campo opcional `OrdemLavagemModel.colaborador_responsavel_id` preenchido manualmente pelo operador no check-in/início, para permitir ranking individual sem reestruturar o conceito de equipa.
+- `OrdemLavagemModel.colaborador_responsavel_id` (nullable) — não obrigatório, para não impor trabalho extra ao operador quando não for necessário o detalhe individual.
+- `POST /ordens/{id}/iniciar` aceita `colaborador_responsavel_id` opcional, validando que pertence à equipa escalada para aquele box/turno.
+- `PATCH /ordens/{id}/colaborador-responsavel` — permite corrigir/atribuir depois do início, mesmo já concluída.
+- `GET /bi/dashboards/operacional` → `lavagem_produtividade_colaboradores`: nº de lavagens, receita (via `preco_total_snapshot`) e tempo médio por colaborador, só sobre ordens concluídas com o campo preenchido.
+- Ligado ao Dashboard Executivo.
 
-**Não avançar esta fase sem essa decisão.**
+**Critério de aceitação:** iniciar uma lavagem indicando o colaborador responsável e concluí-la faz esse colaborador aparecer em `lavagem_produtividade_colaboradores` com os valores correctos.
 
 ---
 
-## Fase 5 — Requer entidade `Filial`
+## Fase 5 — Concluída: entidade `Filial` e comparativo entre unidades
 
-**Bloqueia:** Comparativo entre Filiais.
+**Desbloqueou:** Comparativo entre Filiais (nº lavagens, receita).
 
-### Problema actual
+### Decisão de negócio tomada
 
-Não existe `FilialModel`/tabela `filiais` no schema — só um campo solto `filial_id` em `AreaServicoModel`, sem entidade correspondente nem propagação a `BoxLavagemModel`/`OrdemLavagemModel`/`EquipaLavagemModel`.
+A empresa tem várias unidades físicas — Fase 5 implementada.
 
-### Especificação
+### O que foi implementado
 
-- [ ] Criar `FilialModel` (id, company_id, nome, morada, activo) — já previsto em `PROMPT_DOMINIO_01_OPERACOES.md`.
-- [ ] Propagar `filial_id` a `BoxLavagemModel` (via `AreaServicoModel`, já tem a FK) e agregações por filial.
-- [ ] Este sprint só compensa se a empresa tiver mais do que uma unidade física — confirmar necessidade de negócio antes de implementar.
+- `FilialModel` (id, company_id, nome, morada, activo) — CRUD completo em `operacoes_estacao.py` (`/operacoes/estacao/filiais`), reutilizando a permissão `operacoes.estacao.gerir_equipamentos`.
+- `BoxLavagemModel.filial_id` (denormalizado, nullable) — evita join através de `areas_servico` em toda agregação de BI; associável ao criar/editar um box.
+- `GET /bi/dashboards/operacional` → `lavagem_comparativo_filiais`: nº de lavagens e receita por filial, só para filiais cadastradas (sem inventar "filial padrão" quando não há nenhuma).
+- Frontend: `dashboard/configuracoes/filiais` deixou de ser mockup (era dados fixos) e passa a ser CRUD real; formulário de criação de Box em `dashboard/operacoes/lavagem` ganhou selector de filial (só aparece se houver filiais cadastradas).
+- Ligado ao Dashboard Executivo.
+
+**Critério de aceitação:** criar 2 filiais, associar boxes diferentes a cada uma, concluir lavagens em boxes de ambas, e confirmar que `lavagem_comparativo_filiais` reflecte os números certos por filial.
 
 ---
 
@@ -140,8 +146,8 @@ Fase 2 (concluída: tempo médio de atendimento/espera — produtividade por tur
    ↓
 Fase 3 (concluída: ticket médio/receita — receita por box/equipa/serviço ainda por adicionar)
    ↓
-Fase 4 (decisão de negócio)        — produtividade individual, só depois de confirmar o modelo
-Fase 5 (Filial)                    — só se houver mais de uma unidade física
+Fase 4 (concluída: produtividade individual via colaborador_responsavel_id, opcional)
+Fase 5 (concluída: entidade Filial + comparativo entre unidades)
    ↓
 Fase 6 (heatmap, cross-sell)       — construir sobre as fases anteriores já maduras
 IA de previsão                     — fora de escopo até decisão de negócio explícita

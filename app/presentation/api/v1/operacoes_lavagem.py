@@ -662,6 +662,7 @@ async def delete_tipo(
 
 class BoxCreateDTO(BaseModel):
     area_servico_id: Optional[UUID] = None
+    filial_id: Optional[UUID] = None
     codigo: str = Field(..., min_length=1, max_length=20)
     nome: str = Field(..., min_length=1, max_length=120)
     capacidade: int = Field(default=1, gt=0)
@@ -670,6 +671,7 @@ class BoxCreateDTO(BaseModel):
 class BoxResponseDTO(BaseModel):
     id: UUID
     company_id: UUID
+    filial_id: Optional[UUID] = None
     codigo: str
     nome: str
     estado: str
@@ -798,6 +800,7 @@ class OrdemResponseDTO(BaseModel):
     estado: str
     origem: str
     equipa: Optional[str] = None
+    colaborador_responsavel_id: Optional[UUID] = None
     agua_consumida_litros: Optional[Decimal] = None
     re_lavagem_de_id: Optional[UUID] = None
     preco_total: Optional[Decimal] = None
@@ -953,6 +956,7 @@ async def checkin(
 async def iniciar(
     id: UUID,
     box_id: Optional[UUID] = None,
+    colaborador_responsavel_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("operacoes.lavagem.operar")),
 ):
@@ -969,6 +973,15 @@ async def iniciar(
         raise HTTPException(400, "Nenhuma equipa escalada para este box neste turno — escale uma equipa primeiro")
     o.equipa = equipa_csv
 
+    # Atribuição individual opcional (D7 continua colectivo por omissão —
+    # ver PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md, Fase 4). Se indicado, o
+    # operador confirma que este membro da equipa é o responsável directo.
+    if colaborador_responsavel_id:
+        equipa_ids = {UUID(uid) for uid in equipa_csv.split(",") if uid}
+        if colaborador_responsavel_id not in equipa_ids:
+            raise HTTPException(400, "Colaborador indicado não pertence à equipa escalada para este box/turno")
+        o.colaborador_responsavel_id = colaborador_responsavel_id
+
     o.estado = "em_curso"
     o.iniciado_em = datetime.utcnow()
     o.updated_at = o.iniciado_em
@@ -976,6 +989,33 @@ async def iniciar(
     box = br.scalar_one_or_none()
     if box:
         box.estado = "ocupado"
+    await db.commit()
+    return await _to_response(db, o)
+
+
+class ColaboradorResponsavelDTO(BaseModel):
+    colaborador_responsavel_id: UUID
+
+
+@router.patch("/ordens/{id}/colaborador-responsavel", response_model=OrdemResponseDTO)
+async def definir_colaborador_responsavel(
+    id: UUID,
+    body: ColaboradorResponsavelDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.operar")),
+):
+    """Regista/corrige qual colaborador da equipa foi o responsável directo
+    pela lavagem — opcional, para produtividade individual (Fase 4).
+    Aceite em qualquer estado a partir de 'em_curso', para permitir
+    correcção mesmo depois de concluída."""
+    o = await _load_ordem(db, id, current_user)
+    if o.estado in ("rascunho", "agendada", "confirmada", "checkin"):
+        raise HTTPException(400, "Só é possível atribuir responsável a partir do início da lavagem")
+    if o.equipa:
+        equipa_ids = {UUID(uid) for uid in o.equipa.split(",") if uid}
+        if body.colaborador_responsavel_id not in equipa_ids:
+            raise HTTPException(400, "Colaborador indicado não pertence à equipa desta ordem")
+    o.colaborador_responsavel_id = body.colaborador_responsavel_id
     await db.commit()
     return await _to_response(db, o)
 

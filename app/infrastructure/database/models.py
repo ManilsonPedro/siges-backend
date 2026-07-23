@@ -938,6 +938,21 @@ class PedidoProducaoModel(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class FilialModel(Base):
+    """Unidade física (filial/estação) da empresa — permite comparativo
+    de indicadores entre unidades (ver PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md,
+    Fase 5)."""
+    __tablename__ = "filiais"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    nome = Column(String(120), nullable=False)
+    morada = Column(Text, nullable=True)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
 class AreaServicoModel(Base):
     """Área de serviço dentro de uma filial (domínio Operações)."""
     __tablename__ = "areas_servico"
@@ -1000,6 +1015,7 @@ class BoxLavagemModel(Base):
     id = Column(UUID(), primary_key=True, default=uuid4)
     company_id = Column(UUID(), nullable=False, index=True)
     area_servico_id = Column(UUID(), nullable=True)
+    filial_id = Column(UUID(), nullable=True, index=True)  # denormalizado p/ agregações por filial (Fase 5)
     codigo = Column(String(20), nullable=False)
     nome = Column(String(120), nullable=False)
     estado = Column(String(20), default="disponivel", nullable=False, index=True)  # disponivel | ocupado | manutencao
@@ -1033,6 +1049,7 @@ class OrdemLavagemModel(Base):
     origem = Column(String(20), default="backoffice_walkin", nullable=False, index=True)
     # portal_cliente | backoffice_walkin | backoffice_telefone
     equipa = Column(Text, nullable=True)  # CSV de user_id, preenchido automaticamente via EscalaTurno
+    colaborador_responsavel_id = Column(UUID(), nullable=True)  # opcional, p/ produtividade individual (Fase 4)
     agua_consumida_litros = Column(Numeric(8, 2), nullable=True)
     quimicos_consumidos = Column(Text, nullable=True)  # JSON serializado: [{produto_id, quantidade}]
     re_lavagem_de_id = Column(UUID(), nullable=True)

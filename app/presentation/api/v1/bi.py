@@ -27,6 +27,7 @@ from app.infrastructure.database.models import (
     ExtraLavagemModel,
     FaltaModel,
     FeriasModel,
+    FilialModel,
     FundoModel,
     MovimentoFinanceiroModel,
     OrdemLavagemExtraModel,
@@ -34,6 +35,7 @@ from app.infrastructure.database.models import (
     PedidoOnlineModel,
     ProdutoModel,
     StockSaldoModel,
+    UserModel,
     ViaturaModel,
     VendaLinhaModel,
     VendaModel,
@@ -295,6 +297,91 @@ async def dashboard_operacional(
         Decimal("0"),
     )
 
+    # Produtividade individual — Fase 4, só ordens com colaborador_responsavel_id
+    # preenchido manualmente pelo operador; sem isso, produtividade fica
+    # sempre ao nível de equipa/box (D7 preservada por omissão).
+    prod_r = await db.execute(
+        select(
+            OrdemLavagemModel.colaborador_responsavel_id,
+            OrdemLavagemModel.preco_total_snapshot,
+            OrdemLavagemModel.checkin_em,
+            OrdemLavagemModel.concluido_em,
+        )
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.colaborador_responsavel_id.isnot(None))
+        .where(OrdemLavagemModel.estado.in_(["concluida", "paga"]))
+    )
+    por_colaborador: dict[UUID, dict] = {}
+    for colaborador_id, preco, checkin, concluido in prod_r.all():
+        d = por_colaborador.setdefault(colaborador_id, {"n_lavagens": 0, "receita": Decimal("0"), "duracoes_min": []})
+        d["n_lavagens"] += 1
+        if preco is not None:
+            d["receita"] += Decimal(preco)
+        if checkin and concluido:
+            d["duracoes_min"].append((concluido - checkin).total_seconds() / 60)
+
+    nomes_colaboradores: dict[UUID, str] = {}
+    if por_colaborador:
+        ur = await db.execute(
+            select(UserModel)
+            .where(UserModel.company_id == current_user.company_id)
+            .where(UserModel.id.in_(list(por_colaborador.keys())))
+        )
+        nomes_colaboradores = {u.id: u.full_name for u in ur.scalars().all()}
+
+    produtividade_colaboradores = [
+        {
+            "colaborador_id": str(cid),
+            "colaborador_nome": nomes_colaboradores.get(cid, "Colaborador sem registo"),
+            "n_lavagens": d["n_lavagens"],
+            "receita": float(d["receita"]),
+            "tempo_medio_minutos": round(sum(d["duracoes_min"]) / len(d["duracoes_min"]), 1) if d["duracoes_min"] else None,
+        }
+        for cid, d in por_colaborador.items()
+    ]
+    produtividade_colaboradores.sort(key=lambda x: x["n_lavagens"], reverse=True)
+
+    # Comparativo entre filiais — Fase 5, via BoxLavagemModel.filial_id
+    # (denormalizado). Sem filiais cadastradas ou sem boxes associados a
+    # nenhuma, a lista fica vazia — não se inventa uma "filial padrão".
+    filiais_r = await db.execute(
+        select(FilialModel)
+        .where(FilialModel.company_id == current_user.company_id)
+        .where(FilialModel.deleted_at.is_(None))
+    )
+    filiais = list(filiais_r.scalars().all())
+    comparativo_filiais = []
+    if filiais:
+        boxes_r = await db.execute(
+            select(BoxLavagemModel.id, BoxLavagemModel.filial_id)
+            .where(BoxLavagemModel.company_id == current_user.company_id)
+            .where(BoxLavagemModel.deleted_at.is_(None))
+        )
+        filial_por_box = {box_id: filial_id for box_id, filial_id in boxes_r.all()}
+
+        ordens_filial_r = await db.execute(
+            select(OrdemLavagemModel.box_id, OrdemLavagemModel.preco_total_snapshot)
+            .where(OrdemLavagemModel.company_id == current_user.company_id)
+            .where(OrdemLavagemModel.estado.in_(["concluida", "paga"]))
+            .where(OrdemLavagemModel.box_id.isnot(None))
+        )
+        por_filial: dict[UUID, dict] = {f.id: {"n_lavagens": 0, "receita": Decimal("0")} for f in filiais}
+        for box_id, preco in ordens_filial_r.all():
+            filial_id = filial_por_box.get(box_id)
+            if filial_id and filial_id in por_filial:
+                por_filial[filial_id]["n_lavagens"] += 1
+                if preco is not None:
+                    por_filial[filial_id]["receita"] += Decimal(preco)
+
+        comparativo_filiais = [
+            {
+                "filial_id": str(f.id), "filial_nome": f.nome,
+                "n_lavagens": por_filial[f.id]["n_lavagens"],
+                "receita": float(por_filial[f.id]["receita"]),
+            }
+            for f in filiais
+        ]
+
     return {
         "ordens_lavagem_em_curso": ordens_em_curso,
         "lavagem_walkins_hoje": walkins_hoje,
@@ -314,6 +401,8 @@ async def dashboard_operacional(
         "lavagem_receita_total": float(receita_total),
         "lavagem_receita_hoje": float(receita_hoje),
         "lavagem_ticket_medio": float(ticket_medio_lavagem.quantize(Decimal("0.01"))),
+        "lavagem_produtividade_colaboradores": produtividade_colaboradores,
+        "lavagem_comparativo_filiais": comparativo_filiais,
     }
 
 

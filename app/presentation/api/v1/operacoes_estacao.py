@@ -17,11 +17,102 @@ from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     AreaServicoModel,
     EquipamentoModel,
+    FilialModel,
     TurnoOperacionalModel,
 )
 
 
 router = APIRouter()
+
+
+# ─── Filiais ─────────────────────────────────────────────────────────
+
+
+class FilialCreateDTO(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=120)
+    morada: Optional[str] = None
+    activo: bool = True
+
+
+class FilialUpdateDTO(BaseModel):
+    nome: Optional[str] = Field(None, min_length=1, max_length=120)
+    morada: Optional[str] = None
+    activo: Optional[bool] = None
+
+
+class FilialResponseDTO(BaseModel):
+    id: UUID
+    company_id: UUID
+    nome: str
+    morada: Optional[str] = None
+    activo: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/filiais", response_model=List[FilialResponseDTO])
+async def list_filiais(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.estacao.view")),
+):
+    r = await db.execute(
+        select(FilialModel)
+        .where(FilialModel.company_id == current_user.company_id)
+        .where(FilialModel.deleted_at.is_(None))
+    )
+    return list(r.scalars().all())
+
+
+@router.post("/filiais", response_model=FilialResponseDTO, status_code=201)
+async def create_filial(
+    req: Request,
+    body: FilialCreateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.estacao.gerir_equipamentos")),
+):
+    m = FilialModel(id=uuid4(), company_id=current_user.company_id, **body.model_dump())
+    db.add(m)
+    await db.flush()
+    await write_audit(
+        db, current_user.id, current_user.company_id,
+        "criada", "filial", m.id, dados_novos={"nome": body.nome},
+        ip_address=req.client.host if req.client else None,
+    )
+    await db.commit()
+    return m
+
+
+@router.patch("/filiais/{id}", response_model=FilialResponseDTO)
+async def update_filial(
+    id: UUID,
+    body: FilialUpdateDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.estacao.gerir_equipamentos")),
+):
+    r = await db.execute(select(FilialModel).where(FilialModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id or m.deleted_at is not None:
+        raise HTTPException(404, "Filial não encontrada")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(m, k, v)
+    await db.commit()
+    return m
+
+
+@router.delete("/filiais/{id}", status_code=204)
+async def delete_filial(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.estacao.gerir_equipamentos")),
+):
+    r = await db.execute(select(FilialModel).where(FilialModel.id == id))
+    m = r.scalar_one_or_none()
+    if not m or m.company_id != current_user.company_id:
+        raise HTTPException(404, "Filial não encontrada")
+    m.deleted_at = datetime.utcnow()
+    await db.commit()
 
 
 # ─── Áreas de Serviço ────────────────────────────────────────────────
