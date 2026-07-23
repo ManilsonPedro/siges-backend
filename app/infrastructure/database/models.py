@@ -1038,6 +1038,14 @@ class OrdemLavagemModel(Base):
     re_lavagem_de_id = Column(UUID(), nullable=True)
     venda_id = Column(UUID(), nullable=True)
     lembrete_enviado = Column(Boolean, default=False, nullable=False)
+    # Timestamps por transição de estado — updated_at é sobrescrito a cada
+    # transição, por isso não serve para medir tempo de atendimento (ver
+    # PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md, Fase 2).
+    checkin_em = Column(DateTime, nullable=True)
+    iniciado_em = Column(DateTime, nullable=True)
+    controlo_qualidade_em = Column(DateTime, nullable=True)
+    concluido_em = Column(DateTime, nullable=True)
+    preco_total_snapshot = Column(Numeric(10, 2), nullable=True)  # gravado na conclusão (Fase 3)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

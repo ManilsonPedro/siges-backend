@@ -39,40 +39,49 @@ Estes indicadores já estão no backend e ligados ao Dashboard Executivo:
 
 ---
 
-## Fase 2 — Requer campo novo: timestamps por transição de estado
+## Fase 2 — Concluída: timestamps por transição de estado
 
-**Bloqueia:** Tempo Médio por Lavagem, Tempo de Espera na Fila, Tempo Médio de Atendimento (check-in → entrega), Eficiência Operacional (lavagens/hora), Produtividade por Turno.
+**Desbloqueou:** Tempo Médio de Atendimento (check-in → conclusão), Tempo Médio de Espera na Fila.
+**Ainda por fazer dentro desta fase:** Eficiência Operacional (lavagens/hora), Produtividade por Turno, Heatmap — ver nota abaixo.
 
-### Problema actual
+### O que foi implementado
 
-`OrdemLavagemModel.updated_at` é sobrescrito a cada mudança de estado (`checkin`, `iniciar`, `controlo_qualidade`, `concluir` fazem todos `o.updated_at = datetime.utcnow()`). É impossível hoje reconstruir quando ocorreu o check-in especificamente — cada transição apaga o timestamp da anterior.
+- `OrdemLavagemModel` ganhou `checkin_em`, `iniciado_em`, `controlo_qualidade_em`, `concluido_em` (todos `DateTime`, nullable) — `updated_at` continua a ser sobrescrito a cada transição (comportamento antigo preservado), mas agora cada transição também grava o seu próprio timestamp dedicado, que nunca é apagado por uma transição posterior.
+- Migração idempotente em `migrar_dashboard_lavagem.py` (`ADD COLUMN IF NOT EXISTS`), registada em `migrar.py`.
+- `operacoes_lavagem.py`: `/checkin`, `/iniciar`, `/controlo-qualidade`, `/concluir` preenchem o timestamp correspondente.
+- `GET /bi/dashboards/operacional` → `lavagem_tempo_medio_atendimento_minutos` (média de `concluido_em - checkin_em` sobre ordens com ambos preenchidos) e `lavagem_tempo_medio_espera_minutos` (média de `agora - created_at` sobre ordens ainda em `agendada`/`confirmada`/`checkin`).
+- Ligado ao Dashboard Executivo (`dashboard/relatorios/executivo/page.tsx`).
 
-### Especificação
+### Ainda por fazer (não incluído nesta implementação)
 
-- [ ] Adicionar a `OrdemLavagemModel`: `checkin_em` (DateTime, nullable), `iniciado_em` (DateTime, nullable), `controlo_qualidade_em` (DateTime, nullable), `concluido_em` (DateTime, nullable). Migração idempotente em `migrar_*.py` com `ADD COLUMN IF NOT EXISTS`.
-- [ ] `operacoes_lavagem.py`: cada endpoint de transição (`/checkin`, `/iniciar`, `/controlo-qualidade`, `/concluir`) preenche o timestamp correspondente, além de continuar a actualizar `updated_at`.
-- [ ] Novo indicador `GET /bi/dashboards/operacional` → `lavagem_tempo_medio_atendimento_minutos`: média de `(concluido_em - checkin_em)` sobre ordens concluídas no período.
-- [ ] Novo indicador `lavagem_tempo_medio_espera_minutos`: para ordens ainda em `agendada`/`checkin`, `(agora - created_at)` — tempo de espera na fila.
-- [ ] Produtividade por hora/turno passa a ser possível agrupando `checkin_em`/`concluido_em` por hora do dia — especificar endpoint `GET /bi/dashboards/operacional/produtividade-horaria?data=` quando este sprint avançar.
+- [ ] Produtividade por hora/turno: agrupar `checkin_em`/`concluido_em` por hora do dia — especificar endpoint `GET /bi/dashboards/operacional/produtividade-horaria?data=` quando este sprint avançar. Não implementado porque exige decidir a granularidade de agrupamento (por hora civil? por turno operacional?) antes de codificar.
 
-**Critério de aceitação:** criar uma ordem, fazer check-in, iniciar e concluir com um intervalo real (ex.: 40 min) faz `lavagem_tempo_medio_atendimento_minutos` reflectir esse valor.
+**Critério de aceitação:** cumprido para tempo médio de atendimento/espera — testar criando uma ordem, fazendo check-in, iniciar e concluir com um intervalo real (ex.: 40 min) e confirmando que `lavagem_tempo_medio_atendimento_minutos` reflecte esse valor.
 
 ---
 
-## Fase 3 — Requer preço persistido na ordem
+## Fase 3 — Concluída: preço persistido na ordem
 
-**Bloqueia:** Ticket Médio, Receita da Lavagem, Receita por Box/Equipa/Funcionário/Produto, Ranking de Serviços por rentabilidade, Valor por Cliente, Lifetime Value.
+**Desbloqueou:** Ticket Médio da Lavagem, Receita da Lavagem (hoje/total).
+**Ainda por fazer dentro desta fase:** Receita por Box/Equipa/Funcionário/Produto, Ranking de Serviços por rentabilidade — ver nota abaixo.
 
-### Problema actual
+### O que foi implementado
 
-O preço de uma `OrdemLavagem` é **calculado dinamicamente** via `_calcular_preco_ordem` (tipo + categoria + extras) sempre que é pedido — nunca fica persistido na própria ordem. Isto obriga a recalcular por ordem em toda agregação de receita, o que é caro e frágil se o catálogo de preços mudar depois.
+- `OrdemLavagemModel.preco_total_snapshot` (Numeric(10,2), nullable) — preenchido em `POST /ordens/{id}/concluir` com o valor calculado por `_calcular_preco_ordem` **nesse instante** (tipo + categoria do veículo + extras vigentes), antes de a ordem passar a `concluida`. Não muda retroactivamente se o catálogo de preços for alterado depois.
+- `_to_response` em `operacoes_lavagem.py` usa `preco_total_snapshot` quando já preenchido (ordem concluída/paga) em vez de recalcular pelo catálogo actual — histórico fica estável.
+- `GET /bi/dashboards/operacional` → `lavagem_receita_total`, `lavagem_receita_hoje`, `lavagem_ticket_medio` (todos sobre `preco_total_snapshot`, só ordens já concluídas).
+- Ligado ao Dashboard Executivo.
 
-### Especificação
+### Ainda por fazer (não incluído nesta implementação)
 
-- [ ] Adicionar `OrdemLavagemModel.preco_total_snapshot` (Numeric, nullable) — preenchido no momento da conclusão (`POST /ordens/{id}/concluir`), com o valor calculado por `_calcular_preco_ordem` **nesse instante**, para não mudar retroactivamente se o catálogo for alterado depois.
-- [ ] Novos indicadores agregados sobre `preco_total_snapshot`: receita total do dia/semana/mês, ticket médio, receita por box (via `box_id`), receita por equipa (via `equipa` CSV), receita por tipo de serviço.
+- [ ] Receita por Box: agrupar `preco_total_snapshot` por `box_id`.
+- [ ] Receita por Equipa: agrupar por `equipa` (CSV de user_id) — exige parsear o CSV ou aguardar decisão da Fase 4 sobre atribuição individual.
+- [ ] Receita por Tipo de Serviço: agrupar por `tipo_lavagem_id`.
+- [ ] Ranking de Serviços por rentabilidade: depende de custo por serviço, que não existe no schema (só `preco_base`, sem custo associado) — precisa de decisão de negócio sobre como modelar custo antes de avançar.
 
-**Critério de aceitação:** concluir uma lavagem grava o preço nesse momento; mudar o `preco_base` do `TipoLavagem` depois não altera o valor já gravado nas ordens antigas.
+Não implementados nesta passagem por serem "mais uma dimensão de agrupamento" sobre a mesma coluna, não um bloqueio de schema — podem ser adicionados a pedido, individualmente, sem necessidade de mais migrações.
+
+**Critério de aceitação:** cumprido para ticket médio/receita — concluir uma lavagem grava o preço nesse momento; mudar o `preco_base` do `TipoLavagem` depois não altera o valor já gravado nas ordens antigas.
 
 ---
 
@@ -127,9 +136,9 @@ Estes itens do pedido original não têm nenhum dado subjacente hoje — são **
 ```
 Fase 1 (concluída, incluindo cancelamentos/retrabalho/extras)
    ↓
-Fase 2 (timestamps por estado)     — desbloqueia tempo médio, eficiência, produtividade por turno
+Fase 2 (concluída: tempo médio de atendimento/espera — produtividade por turno ainda por especificar)
    ↓
-Fase 3 (preço persistido)          — desbloqueia receita/ticket médio/rentabilidade
+Fase 3 (concluída: ticket médio/receita — receita por box/equipa/serviço ainda por adicionar)
    ↓
 Fase 4 (decisão de negócio)        — produtividade individual, só depois de confirmar o modelo
 Fase 5 (Filial)                    — só se houver mais de uma unidade física

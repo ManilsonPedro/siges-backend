@@ -255,6 +255,46 @@ async def dashboard_operacional(
                     categoria_nome = categorias_por_id.get(viatura.categoria_veiculo_id, "Sem categoria")
             agua_por_categoria[categoria_nome] = agua_por_categoria.get(categoria_nome, 0.0) + float(consumo.litros_consumidos)
 
+    # Tempo médio de atendimento (checkin -> concluído) e de espera na fila
+    # (ordens ainda agendadas/em checkin) — Fase 2, requer timestamps por
+    # transição de estado (ver PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md).
+    concl_tempos_r = await db.execute(
+        select(OrdemLavagemModel.checkin_em, OrdemLavagemModel.concluido_em)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.checkin_em.isnot(None))
+        .where(OrdemLavagemModel.concluido_em.isnot(None))
+    )
+    duracoes_min = [
+        (concluido - checkin).total_seconds() / 60
+        for checkin, concluido in concl_tempos_r.all()
+    ]
+    tempo_medio_atendimento_min = (sum(duracoes_min) / len(duracoes_min)) if duracoes_min else 0.0
+
+    agora = datetime.utcnow()
+    espera_r = await db.execute(
+        select(OrdemLavagemModel.created_at)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.estado.in_(["agendada", "confirmada", "checkin"]))
+    )
+    esperas_min = [(agora - criada).total_seconds() / 60 for (criada,) in espera_r.all()]
+    tempo_medio_espera_min = (sum(esperas_min) / len(esperas_min)) if esperas_min else 0.0
+
+    # Receita — Fase 3, sobre preco_total_snapshot (gravado na conclusão,
+    # não recalculado pelo catálogo actual — ver _to_response/concluir em
+    # operacoes_lavagem.py).
+    receita_r = await db.execute(
+        select(OrdemLavagemModel.preco_total_snapshot, OrdemLavagemModel.concluido_em)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.preco_total_snapshot.isnot(None))
+    )
+    receitas = receita_r.all()
+    receita_total = sum((Decimal(preco) for preco, _ in receitas), Decimal("0"))
+    ticket_medio_lavagem = (receita_total / len(receitas)) if receitas else Decimal("0")
+    receita_hoje = sum(
+        (Decimal(preco) for preco, concluido in receitas if concluido and concluido >= hoje),
+        Decimal("0"),
+    )
+
     return {
         "ordens_lavagem_em_curso": ordens_em_curso,
         "lavagem_walkins_hoje": walkins_hoje,
@@ -269,6 +309,11 @@ async def dashboard_operacional(
         "lavagem_cancelamentos_hoje": cancelamentos_hoje,
         "lavagem_taxa_retrabalho_pct": round(taxa_retrabalho_pct, 2),
         "lavagem_top_extras": top_extras,
+        "lavagem_tempo_medio_atendimento_minutos": round(tempo_medio_atendimento_min, 1),
+        "lavagem_tempo_medio_espera_minutos": round(tempo_medio_espera_min, 1),
+        "lavagem_receita_total": float(receita_total),
+        "lavagem_receita_hoje": float(receita_hoje),
+        "lavagem_ticket_medio": float(ticket_medio_lavagem.quantize(Decimal("0.01"))),
     }
 
 

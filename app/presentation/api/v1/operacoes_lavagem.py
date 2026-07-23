@@ -816,7 +816,13 @@ async def _load_ordem(db: AsyncSession, id: UUID, current_user: User) -> OrdemLa
     return o
 
 
-async def _to_response(db: AsyncSession, o: OrdemLavagemModel) -> OrdemResponseDTO:
+async def _calcular_preco_atual(db: AsyncSession, o: OrdemLavagemModel) -> tuple[Decimal, list]:
+    """Preço da ordem calculado *agora* (tipo+categoria+extras vigentes).
+
+    Só reflecte o catálogo actual — usar `preco_total_snapshot` (gravado na
+    conclusão) para valores históricos que não mudam se o catálogo mudar
+    depois (ver PROMPT_DASHBOARD_OPERACIONAL_SPRINTS.md, Fase 3).
+    """
     er = await db.execute(select(OrdemLavagemExtraModel).where(OrdemLavagemExtraModel.ordem_lavagem_id == o.id))
     extras = list(er.scalars().all())
 
@@ -831,6 +837,17 @@ async def _to_response(db: AsyncSession, o: OrdemLavagemModel) -> OrdemResponseD
         db, tipo_lavagem_id=o.tipo_lavagem_id, categoria_veiculo_id=categoria_veiculo_id,
         extra_ids=[e.extra_id for e in extras],
     )
+    return preco_total, extras
+
+
+async def _to_response(db: AsyncSession, o: OrdemLavagemModel) -> OrdemResponseDTO:
+    er = await db.execute(select(OrdemLavagemExtraModel).where(OrdemLavagemExtraModel.ordem_lavagem_id == o.id))
+    extras = list(er.scalars().all())
+
+    if o.preco_total_snapshot is not None:
+        preco_total = Decimal(o.preco_total_snapshot)
+    else:
+        preco_total, extras = await _calcular_preco_atual(db, o)
 
     dto = OrdemResponseDTO.model_validate(o)
     dto.preco_total = preco_total
@@ -926,7 +943,8 @@ async def checkin(
             if not (slot.data_hora_inicio - janela <= agora <= slot.data_hora_inicio + janela):
                 raise HTTPException(400, "Check-in só permitido dentro de ±15 min do horário agendado")
     o.estado = "checkin"
-    o.updated_at = datetime.utcnow()
+    o.checkin_em = datetime.utcnow()
+    o.updated_at = o.checkin_em
     await db.commit()
     return await _to_response(db, o)
 
@@ -952,7 +970,8 @@ async def iniciar(
     o.equipa = equipa_csv
 
     o.estado = "em_curso"
-    o.updated_at = datetime.utcnow()
+    o.iniciado_em = datetime.utcnow()
+    o.updated_at = o.iniciado_em
     br = await db.execute(select(BoxLavagemModel).where(BoxLavagemModel.id == o.box_id))
     box = br.scalar_one_or_none()
     if box:
@@ -1027,7 +1046,8 @@ async def controlo_qualidade(
     )
     db.add(cq)
     o.estado = "controlo_qualidade"
-    o.updated_at = datetime.utcnow()
+    o.controlo_qualidade_em = datetime.utcnow()
+    o.updated_at = o.controlo_qualidade_em
 
     if body.pontuacao < 3:
         await write_audit(
@@ -1067,8 +1087,11 @@ async def concluir(
     o = await _load_ordem(db, id, current_user)
     if o.estado != "controlo_qualidade":
         raise HTTPException(400, "Ordem precisa de controlo de qualidade antes de concluir")
+    preco_total, _ = await _calcular_preco_atual(db, o)
+    o.preco_total_snapshot = preco_total
     o.estado = "concluida"
-    o.updated_at = datetime.utcnow()
+    o.concluido_em = datetime.utcnow()
+    o.updated_at = o.concluido_em
     if o.box_id:
         br = await db.execute(select(BoxLavagemModel).where(BoxLavagemModel.id == o.box_id))
         box = br.scalar_one_or_none()
