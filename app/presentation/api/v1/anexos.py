@@ -27,6 +27,35 @@ from app.infrastructure.storage import get_storage_provider
 
 router = APIRouter()
 
+
+def resolver_url_anexo(storage, file_path: str, *, base_url: str = "") -> str:
+    """URL consumível pelo frontend para um file_path de storage — presigned
+    no B2, ou caminho local servido pela app. Reutilizável por qualquer
+    módulo que precise expor um AnexoModel (ex. fotos de ordem_lavagem)."""
+    if hasattr(storage, "presigned_url"):
+        return storage.presigned_url(file_path)
+    return f"{base_url}/uploads/{file_path}" if base_url else f"/uploads/{file_path}"
+
+
+async def listar_anexos_por_tipo(
+    db: AsyncSession, *, company_id: UUID, entity_type: str, entity_id: UUID, tipo_documento: str, base_url: str = "",
+) -> List[str]:
+    """Devolve as URLs dos anexos mais recentes (por versão) de um tipo de
+    documento — usado por get_fotos (ordem_lavagem) para não duplicar a
+    query de listagem já feita em list_anexos."""
+    storage = get_storage_provider()
+    r = await db.execute(
+        select(AnexoModel)
+        .where(AnexoModel.company_id == company_id)
+        .where(AnexoModel.entity_type == entity_type)
+        .where(AnexoModel.entity_id == entity_id)
+        .where(AnexoModel.tipo_documento == tipo_documento)
+        .where(AnexoModel.deleted_at.is_(None))
+        .order_by(AnexoModel.versao.desc())
+    )
+    return [resolver_url_anexo(storage, a.file_path, base_url=base_url) for a in r.scalars().all()]
+
+
 _ALLOWED_MIME = {
     "application/pdf",
     "image/png", "image/jpeg", "image/jpg",
@@ -37,8 +66,9 @@ _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 _TIPOS_DOCUMENTO = {
     "proforma", "fatura", "fatura_recibo", "recibo", "ordem_recepcao", "guia_transporte",
-    "comprovativo_pagamento", "comprovativo_bancario", "fotografia", "outro",
+    "comprovativo_pagamento", "comprovativo_bancario", "fotografia", "foto_antes", "foto_depois", "outro",
 }
+_TIPOS_IMAGEM = {"image/png", "image/jpeg", "image/jpg"}
 
 
 class AnexoResponseDTO(BaseModel):

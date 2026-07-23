@@ -12,12 +12,13 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.auth.dependencies import get_current_cliente
+from app.presentation.api.v1.anexos import listar_anexos_por_tipo
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
@@ -340,6 +341,7 @@ class ReservaDetalheDTO(ReservaResponseDTO):
 @router.get("/reservas/{id}/detalhe", response_model=ReservaDetalheDTO)
 async def detalhe_reserva(
     id: UUID,
+    req: Request,
     conta: ContaClienteModel = Depends(get_current_cliente),
     db: AsyncSession = Depends(get_db),
 ):
@@ -365,6 +367,16 @@ async def detalhe_reserva(
     )
     cq = cqr.scalars().first()
 
+    base_url = str(req.base_url).rstrip("/")
+    fotos_antes = await listar_anexos_por_tipo(
+        db, company_id=o.company_id, entity_type="ordem_lavagem",
+        entity_id=o.id, tipo_documento="foto_antes", base_url=base_url,
+    )
+    fotos_depois = await listar_anexos_por_tipo(
+        db, company_id=o.company_id, entity_type="ordem_lavagem",
+        entity_id=o.id, tipo_documento="foto_depois", base_url=base_url,
+    )
+
     return ReservaDetalheDTO(
         **base.model_dump(),
         tipo_lavagem_nome=tipo.nome if tipo else "",
@@ -372,7 +384,7 @@ async def detalhe_reserva(
         viatura_marca=viatura.marca if viatura else None,
         viatura_modelo=viatura.modelo if viatura else None,
         controlo_qualidade=ControloQualidadeDTO.model_validate(cq) if cq else None,
-        fotos_antes=[], fotos_depois=[],  # placeholder — ver get_fotos em operacoes_lavagem.py
+        fotos_antes=fotos_antes, fotos_depois=fotos_depois,
         re_lavagem_de_id=o.re_lavagem_de_id,
     )
 

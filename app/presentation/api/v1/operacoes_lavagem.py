@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ from app.infrastructure.audit import write_audit
 from app.infrastructure.auth.dependencies import require_permission
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
+    AnexoModel,
     BoxLavagemModel,
     CategoriaVeiculoModel,
     ConsumoAguaModel,
@@ -47,6 +48,8 @@ from app.infrastructure.database.models import (
     TurnoOperacionalModel,
     ViaturaModel,
 )
+from app.infrastructure.storage import get_storage_provider
+from app.presentation.api.v1.anexos import listar_anexos_por_tipo
 
 
 router = APIRouter()
@@ -1169,14 +1172,79 @@ async def concluir(
 @router.get("/ordens/{id}/fotos")
 async def get_fotos(
     id: UUID,
+    req: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("operacoes.lavagem.view")),
 ):
-    """Placeholder de leitura — upload de fotos reutiliza o storage já
-    existente (infrastructure/storage/); URLs ficam associadas via
-    documento_ref na entidade de anexos já existente no projeto."""
+    """Fotos antes/depois via AnexoModel genérico (entity_type=ordem_lavagem),
+    reaproveitando o mesmo modelo/versionamento criado para Gestão da Água
+    (PROMPT_GESTAO_AGUA_SPRINTS.md, Fase 4) em vez de uma tabela dedicada."""
     await _load_ordem(db, id, current_user)
-    return {"fotos_antes": [], "fotos_depois": []}
+    base_url = str(req.base_url).rstrip("/")
+    fotos_antes = await listar_anexos_por_tipo(
+        db, company_id=current_user.company_id, entity_type="ordem_lavagem",
+        entity_id=id, tipo_documento="foto_antes", base_url=base_url,
+    )
+    fotos_depois = await listar_anexos_por_tipo(
+        db, company_id=current_user.company_id, entity_type="ordem_lavagem",
+        entity_id=id, tipo_documento="foto_depois", base_url=base_url,
+    )
+    return {"fotos_antes": fotos_antes, "fotos_depois": fotos_depois}
+
+
+@router.post("/ordens/{id}/fotos", status_code=201)
+async def upload_foto(
+    id: UUID,
+    req: Request,
+    momento: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.operar")),
+):
+    if momento not in ("antes", "depois"):
+        raise HTTPException(400, "momento deve ser 'antes' ou 'depois'")
+    await _load_ordem(db, id, current_user)
+    if file.content_type not in ("image/png", "image/jpeg", "image/jpg"):
+        raise HTTPException(400, f"Tipo de ficheiro não suportado: {file.content_type}")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Ficheiro maior que 10 MB")
+
+    tipo_documento = f"foto_{momento}"
+    versao_r = await db.execute(
+        select(AnexoModel.versao)
+        .where(AnexoModel.company_id == current_user.company_id)
+        .where(AnexoModel.entity_type == "ordem_lavagem")
+        .where(AnexoModel.entity_id == id)
+        .where(AnexoModel.tipo_documento == tipo_documento)
+        .order_by(AnexoModel.versao.desc())
+        .limit(1)
+    )
+    versao = (versao_r.scalar() or 0) + 1
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "jpg"
+    file_key = f"anexos/ordem_lavagem/{id}/{tipo_documento}_v{versao}_{uuid4().hex[:8]}.{ext}"
+
+    storage = get_storage_provider()
+    import io as _io
+    await storage.upload(file_key, _io.BytesIO(content), content_type=file.content_type or "image/jpeg")
+
+    a = AnexoModel(
+        id=uuid4(), company_id=current_user.company_id,
+        entity_type="ordem_lavagem", entity_id=id,
+        tipo_documento=tipo_documento, versao=versao,
+        file_path=file_key, file_name=file.filename or file_key,
+        mime_type=file.content_type, size_bytes=len(content),
+        uploaded_by=current_user.id,
+    )
+    db.add(a)
+    await write_audit(
+        db, current_user.id, current_user.company_id,
+        "anexo_upload", "ordem_lavagem", id,
+        dados_novos={"tipo_documento": tipo_documento, "versao": versao},
+        ip_address=req.client.host if req.client else None,
+    )
+    await db.commit()
+    return {"id": str(a.id), "tipo_documento": tipo_documento, "versao": versao}
 
 
 # ─── Walk-in e Fila de Prioridade (D1, D2) ───────────────────────────
