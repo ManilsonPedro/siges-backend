@@ -5,16 +5,12 @@ Fluxo:
   2. POST /vendas → cria rascunho com linhas
   3. POST /vendas/{id}/pagamentos (1..N)
   4. POST /vendas/{id}/concluir
-       → ErpGateway.consultar_stock (por linha)
-       → ErpGateway.emitir_documento_venda (nº proforma)
+       → confere stock disponível (por linha)
+       → gera nº de proforma sequencial (idempotente)
        → stock_service.registar_movimento (saida_venda) por linha
        → devolve venda com numero_proforma
   5. GET  /vendas/{id}/proforma.pdf
   6. POST /sessoes/{id}/fechar (apura diferenca)
-
-Pós-venda (F5 — fila de fiscalização Primavera):
-  - GET  /vendas?pendente_primavera=true
-  - POST /vendas/{id}/marcar-fiscalizada (ref_primavera)
 """
 from __future__ import annotations
 
@@ -26,7 +22,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,15 +35,47 @@ from app.infrastructure.database.models import (
     ArmazemModel,
     CaixaSessaoModel,
     ProdutoModel,
+    StockSaldoModel,
     VendaLinhaModel,
     VendaModel,
     VendaPagamentoModel,
 )
-from app.infrastructure.erp import get_erp_gateway
 from app.infrastructure.export.proforma_pdf import gerar_proforma_pdf
 
 
 router = APIRouter()
+
+
+async def _emitir_numero_proforma(db: AsyncSession, *, company_id: UUID, venda: VendaModel) -> str:
+    """Gera o nº sequencial de proforma (PRF-<ano>-<seq>) para a venda.
+
+    Idempotente: se a venda já tiver número atribuído, devolve o mesmo
+    (chamar duas vezes para a mesma venda nunca gera dois números).
+    """
+    if venda.numero_proforma:
+        return venda.numero_proforma
+
+    ano = (venda.data or datetime.utcnow()).strftime("%Y")
+    try:
+        count_r = await db.execute(
+            select(func.count(VendaModel.id))
+            .where(VendaModel.company_id == company_id)
+            .where(VendaModel.numero_proforma.isnot(None))
+            .where(func.to_char(VendaModel.data, "YYYY") == ano)
+        )
+        n = (count_r.scalar() or 0) + 1
+    except Exception:
+        # Fallback p/ SQLite (sem to_char) — usa contador absoluto
+        count_r = await db.execute(
+            select(func.count(VendaModel.id))
+            .where(VendaModel.company_id == company_id)
+            .where(VendaModel.numero_proforma.isnot(None))
+        )
+        n = (count_r.scalar() or 0) + 1
+
+    numero = f"PRF-{ano}-{n:05d}"
+    venda.numero_proforma = numero
+    return numero
 
 
 # ─── DTOs ────────────────────────────────────────────────────────────
@@ -104,10 +132,6 @@ class PagamentoCreateDTO(BaseModel):
     ref_externa: Optional[str] = None
 
 
-class MarcarFiscalizadaDTO(BaseModel):
-    ref_primavera: str = Field(..., min_length=1, max_length=50)
-
-
 class LinhaResponseDTO(BaseModel):
     id: UUID
     produto_id: UUID
@@ -148,7 +172,7 @@ class VendaResponseDTO(BaseModel):
     total_liquido: Decimal
     estado: str
     correlation_id: str
-    ref_primavera: Optional[str] = None
+    numero_fatura_interna: Optional[str] = None
     observacao: Optional[str] = None
     linhas: List[LinhaResponseDTO] = []
     pagamentos: List[PagamentoResponseDTO] = []
@@ -446,14 +470,15 @@ async def concluir_venda(
             f"Pagamento insuficiente: pago={pago}, total={v.total_liquido}"
         )
 
-    gateway = get_erp_gateway()
-
-    # 1) Verifica stock disponível (consulta) em cada linha
+    # 1) Verifica stock disponível em cada linha
     for ln in v.linhas:
-        disp = await gateway.consultar_stock(
-            db, company_id=current_user.company_id,
-            produto_id=ln.produto_id, armazem_id=v.armazem_id,
+        sr = await db.execute(
+            select(StockSaldoModel)
+            .where(StockSaldoModel.produto_id == ln.produto_id)
+            .where(StockSaldoModel.armazem_id == v.armazem_id)
         )
+        saldo = sr.scalar_one_or_none()
+        disp = (Decimal(saldo.qtd_actual) - Decimal(saldo.qtd_reservada)) if saldo else Decimal("0")
         if disp < Decimal(ln.quantidade):
             raise HTTPException(
                 409,
@@ -475,13 +500,8 @@ async def concluir_venda(
             created_by=current_user.id,
         )
 
-    # 3) Emite documento (gera nº proforma sequencial)
-    doc = await gateway.emitir_documento_venda(
-        db, company_id=current_user.company_id,
-        venda_id=v.id, correlation_id=v.correlation_id,
-    )
-    # local gateway já preencheu v.numero_proforma; reforçar:
-    v.numero_proforma = doc.numero
+    # 3) Gera nº de proforma sequencial (idempotente)
+    await _emitir_numero_proforma(db, company_id=current_user.company_id, venda=v)
     v.estado = "concluida"
     v.updated_at = datetime.utcnow()
 
@@ -534,7 +554,7 @@ async def anular_venda(
 async def list_vendas(
     estado: Optional[str] = None,
     sessao_id: Optional[UUID] = None,
-    pendente_primavera: bool = False,
+    pendente_faturacao: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -550,9 +570,9 @@ async def list_vendas(
         stmt = stmt.where(VendaModel.estado == estado)
     if sessao_id:
         stmt = stmt.where(VendaModel.sessao_id == sessao_id)
-    if pendente_primavera:
+    if pendente_faturacao:
         stmt = stmt.where(VendaModel.estado == "concluida") \
-                   .where(VendaModel.ref_primavera.is_(None))
+                   .where(VendaModel.numero_fatura_interna.is_(None))
     stmt = stmt.order_by(VendaModel.data.desc()) \
                .offset((page - 1) * page_size).limit(page_size)
     r = await db.execute(stmt)
@@ -589,27 +609,33 @@ async def proforma_pdf(
     )
 
 
-# ─── F5 — Fila de fiscalização Primavera ─────────────────────────────
+# ─── Faturação interna ────────────────────────────────────────────────
 
 
-@router.post("/vendas/{id}/marcar-fiscalizada", response_model=VendaResponseDTO)
-async def marcar_fiscalizada(
-    id: UUID, req: Request, body: MarcarFiscalizadaDTO,
+class MarcarFaturadaDTO(BaseModel):
+    numero_fatura_interna: str = Field(..., min_length=1, max_length=50)
+
+
+@router.post("/vendas/{id}/marcar-faturada", response_model=VendaResponseDTO)
+async def marcar_faturada(
+    id: UUID, req: Request, body: MarcarFaturadaDTO,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Regista o nº de fatura interna emitida para a venda concluída —
+    faturação própria da aplicação, sem depender de ERP externo."""
     v = await _load_venda(db, id, current_user.company_id)
     if v.estado != "concluida":
-        raise HTTPException(409, "Só vendas concluídas podem ser marcadas")
-    if v.ref_primavera:
-        raise HTTPException(409, f"Venda já marcada com ref {v.ref_primavera}")
-    v.ref_primavera = body.ref_primavera
-    v.primavera_marcada_em = datetime.utcnow()
-    v.primavera_marcada_por = current_user.id
+        raise HTTPException(409, "Só vendas concluídas podem ser faturadas")
+    if v.numero_fatura_interna:
+        raise HTTPException(409, f"Venda já faturada com nº {v.numero_fatura_interna}")
+    v.numero_fatura_interna = body.numero_fatura_interna
+    v.faturada_em = datetime.utcnow()
+    v.faturada_por = current_user.id
     await write_audit(
         db, current_user.id, current_user.company_id,
-        "venda_marcar_fiscalizada", "venda", v.id,
-        dados_novos={"ref_primavera": body.ref_primavera},
+        "venda_marcar_faturada", "venda", v.id,
+        dados_novos={"numero_fatura_interna": body.numero_fatura_interna},
         ip_address=req.client.host if req.client else None,
     )
     await db.commit()

@@ -1,8 +1,8 @@
 """Geração de PDF de proforma de venda.
 
-NOTA: Proforma é documento **interno** — não substitui factura legal do
-Primavera. Quando a integração F6 estiver activa, a factura legal vem do
-Primavera e é referenciada em ``VendaModel.ref_primavera``.
+NOTA: Proforma é documento **interno** — não substitui factura fiscal.
+Quando a fatura correspondente é emitida, o nº é registado manualmente
+em ``VendaModel.numero_fatura_interna``.
 """
 from __future__ import annotations
 
@@ -82,16 +82,16 @@ def render_proforma_html(venda: VendaModel, *, empresa_nome: str = "",
             f'</tr>'
         )
 
-    if venda.ref_primavera:
+    if venda.numero_fatura_interna:
         aviso_bg = "#eaf4ec"
         aviso_border = "#27ae60"
         aviso_icon = "&#10003;"
-        aviso_text = f"Documento associado à factura Primavera: <b>{venda.ref_primavera}</b>"
+        aviso_text = f"Documento associado à factura: <b>{venda.numero_fatura_interna}</b>"
     else:
         aviso_bg = "#fff8e1"
         aviso_border = "#f0ad00"
         aviso_icon = "&#9888;"
-        aviso_text = "Documento INTERNO. Não substitui factura fiscal emitida no Primavera ERP."
+        aviso_text = "Documento INTERNO. Não substitui factura fiscal."
 
     return f"""<html>
 <head>

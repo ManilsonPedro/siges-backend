@@ -521,12 +521,20 @@ MIGRATIONS = [
             ("caixa_sessoes", "utilizador_id"), ("caixa_sessoes", "armazem_id"),
             ("vendas", "id"), ("vendas", "company_id"),
             ("vendas", "sessao_id"), ("vendas", "armazem_id"),
-            ("vendas", "primavera_marcada_por"), ("vendas", "created_by"),
+            ("vendas", "faturada_por"), ("vendas", "created_by"),
             ("venda_linhas", "id"), ("venda_linhas", "venda_id"),
             ("venda_linhas", "produto_id"),
             ("venda_pagamentos", "id"), ("venda_pagamentos", "venda_id"),
         ]
     ],
+    # v19 — Remoção do mecanismo Primavera (sem integração ERP externa
+    # neste ciclo; ver SIGES_BI_JENNOS_Documento_Visao_Arquitetural.md
+    # Secção 2.4 e PROMPT_SISTEMA_SIGES_SPRINTS.md Sprint 0.2).
+    # Colunas ref_primavera/primavera_marcada_* migradas via script dedicado
+    # migrar_remover_primavera.py (preserva histórico com ADD+UPDATE+DROP,
+    # em vez de RENAME directo, e corre a seguir a este script no arranque).
+    "DROP INDEX IF EXISTS ix_produtos_ref_primavera",
+    "CREATE INDEX IF NOT EXISTS ix_vendas_pendente_faturacao ON vendas (company_id) WHERE estado = 'concluida' AND numero_fatura_interna IS NULL",
 ]
 
 def run():

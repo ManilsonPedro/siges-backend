@@ -102,7 +102,7 @@ async def delete_area(
 class EquipamentoCreateDTO(BaseModel):
     area_servico_id: Optional[UUID] = None
     nome: str = Field(..., min_length=1, max_length=120)
-    tipo: str = Field(..., pattern="^(bomba_combustivel|maquina_lavagem|outro)$")
+    tipo: str = Field(..., pattern="^(maquina_lavagem|outro)$")
 
 
 class EquipamentoResponseDTO(BaseModel):

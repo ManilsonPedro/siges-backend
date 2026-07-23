@@ -3,8 +3,9 @@
 
 # ============ Credenciais — NUNCA commitar ============
 .env
-.env.dev
-.env.production
+.env.*
+!.env.dev.example
+!.env.production.example
 
 # ============ Base de dados local ============
 *.db

@@ -1,9 +1,4 @@
-"""CRUD de Produtos e Categorias de Produto.
-
-Compatível com o conceito de "Artigo" do Primavera ERP: o modelo já tem
-``sku`` e ``ref_primavera`` para sincronização futura através do
-``ErpGateway`` (ver `app.domain.services.erp_gateway`).
-"""
+"""CRUD de Produtos e Categorias de Produto."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -92,7 +87,6 @@ class ProdutoResponseDTO(BaseModel):
     iva_pct: Decimal
     descricao: Optional[str] = None
     activo: bool
-    ref_primavera: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

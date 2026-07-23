@@ -54,9 +54,6 @@ class Settings(BaseSettings):
     celery_broker_url: str = "amqp://guest:guest@localhost//"
     celery_result_backend: str = "redis://localhost:6379/1"
 
-    # ERP — porta para o sistema fiscal (Primavera). Valores: "local" | "primavera"
-    erp_provider: str = "local"
-
     # MinIO (legado — substituído por B2)
     minio_url: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

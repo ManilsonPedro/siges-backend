@@ -38,7 +38,7 @@ async def seed():
         await db.flush()
 
         fornecedores_data = [
-            ("AQUASAN Lda", "5417235LA031", "+244 923 456 789", "aquasan@aquasan.ao", "Rua da Indústria, 45, Luanda"),
+            ("Distribuidora Central Lda", "5417235LA031", "+244 923 456 789", "geral@distcentral.ao", "Rua da Indústria, 45, Luanda"),
             ("TechSupply Angola", "5423100LA041", "+244 912 345 678", "tech@techsupply.ao", "Av. 4 de Fevereiro, 12"),
             ("Construções Modernas", "5431200LA051", "+244 934 567 890", "admin@construcoes.ao", "Bairro Miramar, Luanda"),
             ("Serviços Gerais Lda", "5441100LA061", "+244 945 678 901", "info@servicos.ao", "Rua Comandante Valódia"),

@@ -212,9 +212,7 @@ class ProdutoCategoriaModel(Base):
 
 
 class ProdutoModel(Base):
-    """Produto/Artigo. Modelo desenhado compatível com o conceito de
-    `Artigo` do Primavera para que a integração futura (F6) seja apenas
-    troca de implementação do `ErpGateway`."""
+    """Produto/Artigo."""
     __tablename__ = "produtos"
 
     id = Column(UUID(), primary_key=True, default=uuid4)
@@ -228,19 +226,14 @@ class ProdutoModel(Base):
     iva_pct = Column(Numeric(5, 2), default=14, nullable=False)
     descricao = Column(Text, nullable=True)
     activo = Column(Boolean, default=True, nullable=False, index=True)
-    ref_primavera = Column(String(50), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True, index=True)
 
 
 class ArmazemModel(Base):
-    """Armazém / Localização física onde o stock reside.
-
-    Multi-armazém desde o início (decisão D3 — docs/05). Quando o
-    Primavera ERP for integrado, cada armazém terá ``ref_primavera``
-    com o código do armazém correspondente no ERP.
-    """
+    """Armazém / Localização física onde o stock reside. Multi-armazém
+    desde o início (decisão D3 — docs/05)."""
     __tablename__ = "armazens"
 
     id = Column(UUID(), primary_key=True, default=uuid4)
@@ -249,7 +242,6 @@ class ArmazemModel(Base):
     nome = Column(String(120), nullable=False)
     morada = Column(Text, nullable=True)
     activo = Column(Boolean, default=True, nullable=False, index=True)
-    ref_primavera = Column(String(50), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True, index=True)
@@ -967,7 +959,7 @@ class EquipamentoModel(Base):
     company_id = Column(UUID(), nullable=False, index=True)
     area_servico_id = Column(UUID(), nullable=True, index=True)
     nome = Column(String(120), nullable=False)
-    tipo = Column(String(30), nullable=False)  # bomba_combustivel | maquina_lavagem | outro
+    tipo = Column(String(30), nullable=False)  # maquina_lavagem | outro
     estado = Column(String(20), default="operacional", nullable=False, index=True)
     ultima_manutencao = Column(DateTime, nullable=True)
     proxima_manutencao_prevista = Column(DateTime, nullable=True)
@@ -985,75 +977,6 @@ class TurnoOperacionalModel(Base):
     hora_inicio = Column(String(5), nullable=False)  # "HH:MM"
     hora_fim = Column(String(5), nullable=False)
     deleted_at = Column(DateTime, nullable=True, index=True)
-
-
-class TanqueCombustivelModel(Base):
-    __tablename__ = "tanques_combustivel"
-
-    id = Column(UUID(), primary_key=True, default=uuid4)
-    company_id = Column(UUID(), nullable=False, index=True)
-    codigo = Column(String(30), nullable=False)
-    tipo_combustivel = Column(String(20), nullable=False)  # gasolina | gasoleo | gpl | outro
-    capacidade_litros = Column(Numeric(12, 2), nullable=False)
-    nivel_atual_litros = Column(Numeric(12, 2), default=0, nullable=False)
-    nivel_minimo_litros = Column(Numeric(12, 2), default=0, nullable=False)
-    nivel_reordenamento_litros = Column(Numeric(12, 2), default=0, nullable=False)
-    activo = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    deleted_at = Column(DateTime, nullable=True, index=True)
-
-
-class BombaModel(Base):
-    __tablename__ = "bombas"
-
-    id = Column(UUID(), primary_key=True, default=uuid4)
-    company_id = Column(UUID(), nullable=False, index=True)
-    area_servico_id = Column(UUID(), nullable=True)
-    codigo = Column(String(30), nullable=False)
-    tanque_id = Column(UUID(), nullable=False, index=True)
-    estado = Column(String(20), default="operacional", nullable=False)
-    deleted_at = Column(DateTime, nullable=True, index=True)
-
-
-class BicoModel(Base):
-    __tablename__ = "bicos"
-
-    id = Column(UUID(), primary_key=True, default=uuid4)
-    bomba_id = Column(UUID(), nullable=False, index=True)
-    codigo = Column(String(20), nullable=False)
-    tipo_combustivel = Column(String(20), nullable=False)
-    deleted_at = Column(DateTime, nullable=True, index=True)
-
-
-class LeituraTanqueModel(Base):
-    __tablename__ = "leituras_tanque"
-
-    id = Column(UUID(), primary_key=True, default=uuid4)
-    tanque_id = Column(UUID(), nullable=False, index=True)
-    data_hora = Column(DateTime, default=datetime.utcnow)
-    nivel_litros = Column(Numeric(12, 2), nullable=False)
-    temperatura = Column(Numeric(5, 2), nullable=True)
-    origem = Column(String(10), default="manual", nullable=False)  # manual | sensor
-    operador_id = Column(UUID(), nullable=True)
-
-
-class AbastecimentoModel(Base):
-    """Transação de abastecimento de combustível numa bomba/bico."""
-    __tablename__ = "abastecimentos"
-
-    id = Column(UUID(), primary_key=True, default=uuid4)
-    company_id = Column(UUID(), nullable=False, index=True)
-    bico_id = Column(UUID(), nullable=False, index=True)
-    tanque_id = Column(UUID(), nullable=False, index=True)
-    tipo_combustivel = Column(String(20), nullable=False)
-    volume_litros = Column(Numeric(12, 3), nullable=False)
-    preco_unitario = Column(Numeric(10, 2), nullable=False)
-    total = Column(Numeric(15, 2), nullable=False)
-    cliente_id = Column(String(36), nullable=True)
-    forma_pagamento = Column(String(20), nullable=False)
-    venda_id = Column(UUID(), nullable=True)
-    operador_id = Column(UUID(), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class TipoLavagemModel(Base):
@@ -1114,6 +1037,7 @@ class OrdemLavagemModel(Base):
     quimicos_consumidos = Column(Text, nullable=True)  # JSON serializado: [{produto_id, quantidade}]
     re_lavagem_de_id = Column(UUID(), nullable=True)
     venda_id = Column(UUID(), nullable=True)
+    lembrete_enviado = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1168,6 +1092,39 @@ class OrdemLavagemExtraModel(Base):
     ordem_lavagem_id = Column(UUID(), nullable=False, index=True)
     extra_id = Column(UUID(), nullable=False, index=True)
     preco_aplicado = Column(Numeric(10, 2), nullable=False)  # snapshot do preço no momento
+
+
+class EquipaLavagemModel(Base):
+    __tablename__ = "equipas_lavagem"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    nome = Column(String(120), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class EquipaMembroModel(Base):
+    __tablename__ = "equipa_membros"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    equipa_id = Column(UUID(), nullable=False, index=True)
+    user_id = Column(UUID(), nullable=False, index=True)
+
+
+class EscalaTurnoModel(Base):
+    """Escalação de uma equipa a um box, num turno, numa data. Usada para
+    atribuir automaticamente a equipa a uma OrdemLavagem no início da
+    lavagem (ver iniciar() em operacoes_lavagem.py)."""
+    __tablename__ = "escalas_turno"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    equipa_id = Column(UUID(), nullable=False, index=True)
+    box_id = Column(UUID(), nullable=False, index=True)
+    turno_id = Column(UUID(), nullable=False, index=True)
+    data = Column(DateTime, nullable=False, index=True)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
 
 
 class TanqueAguaModel(Base):
@@ -1663,9 +1620,10 @@ class CaixaSessaoModel(Base):
 
 
 class VendaModel(Base):
-    """Venda comercial. Não é factura fiscal — é proforma interna que,
-    quando o Primavera ERP estiver integrado, gera factura legal e
-    grava o nº oficial em ``ref_primavera``.
+    """Venda comercial. `numero_proforma` é gerado sequencialmente na
+    conclusão da venda; `numero_fatura_interna` é opcionalmente registado
+    depois, quando a fatura correspondente é emitida (faturação própria
+    da aplicação, sem depender de ERP externo).
     """
     __tablename__ = "vendas"
 
@@ -1683,9 +1641,9 @@ class VendaModel(Base):
     estado = Column(String(20), default="rascunho", nullable=False, index=True)
     # rascunho | concluida | anulada
     correlation_id = Column(String(64), nullable=False, unique=True, index=True)
-    ref_primavera = Column(String(50), nullable=True, index=True)
-    primavera_marcada_em = Column(DateTime, nullable=True)
-    primavera_marcada_por = Column(UUID(), nullable=True)
+    numero_fatura_interna = Column(String(50), nullable=True, index=True)
+    faturada_em = Column(DateTime, nullable=True)
+    faturada_por = Column(UUID(), nullable=True)
     observacao = Column(Text, nullable=True)
     created_by = Column(UUID(), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

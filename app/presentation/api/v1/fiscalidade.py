@@ -1,7 +1,5 @@
 """Fiscalidade (domínio Gestão Financeira): Taxas de Imposto, Obrigações,
-IVA. SAF-T fica como stub até confirmação do regime fiscal aplicável —
-mesmo padrão da porta ErpGateway já usada no projeto para integração
-fiscal externa.
+IVA. SAF-T fica como stub até confirmação do regime fiscal aplicável.
 """
 from __future__ import annotations
 
@@ -190,8 +188,7 @@ async def exportar_saft(
     current_user: User = Depends(require_permission("fiscalidade.gerir_obrigacoes")),
 ):
     """Stub — condicionado à confirmação do regime fiscal aplicável.
-    Mesmo padrão de porta já usado no projeto (ErpGateway): falha
-    propositadamente até haver decisão/API confirmada."""
+    Falha propositadamente até haver decisão/API confirmada."""
     raise HTTPException(
         501,
         "Exportação SAF-T ainda não implementada. Aguarda confirmação do regime fiscal aplicável "

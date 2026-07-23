@@ -5,9 +5,10 @@ métrica correspondente devolve zero/vazio, nunca um valor fixo.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, select
@@ -17,8 +18,10 @@ from app.domain.entities import User
 from app.infrastructure.auth.dependencies import require_permission
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
-    AbastecimentoModel,
+    BoxLavagemModel,
+    CategoriaVeiculoModel,
     ColaboradorModel,
+    ConsumoAguaModel,
     FaltaModel,
     FeriasModel,
     FundoModel,
@@ -27,6 +30,7 @@ from app.infrastructure.database.models import (
     PedidoOnlineModel,
     ProdutoModel,
     StockSaldoModel,
+    ViaturaModel,
     VendaLinhaModel,
     VendaModel,
 )
@@ -113,14 +117,6 @@ async def dashboard_operacional(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("dashboard.ver")),
 ):
-    ar = await db.execute(
-        select(AbastecimentoModel)
-        .where(AbastecimentoModel.company_id == current_user.company_id)
-        .where(AbastecimentoModel.created_at >= datetime.utcnow() - timedelta(days=1))
-    )
-    abastecimentos_24h = list(ar.scalars().all())
-    litros_vendidos = sum((Decimal(a.volume_litros) for a in abastecimentos_24h), Decimal("0"))
-
     lr = await db.execute(
         select(OrdemLavagemModel)
         .where(OrdemLavagemModel.company_id == current_user.company_id)
@@ -128,9 +124,62 @@ async def dashboard_operacional(
     )
     ordens_em_curso = len(list(lr.scalars().all()))
 
+    # Lavagem: walk-ins vs. reservas hoje, ocupação de boxes, água por categoria (Sprint 6)
+    hoje = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    lhr = await db.execute(
+        select(OrdemLavagemModel)
+        .where(OrdemLavagemModel.company_id == current_user.company_id)
+        .where(OrdemLavagemModel.created_at >= hoje)
+    )
+    ordens_hoje = list(lhr.scalars().all())
+    walkins_hoje = sum(1 for o in ordens_hoje if o.origem == "backoffice_walkin")
+    reservas_hoje = sum(1 for o in ordens_hoje if o.origem in ("portal_cliente", "backoffice_telefone"))
+
+    br = await db.execute(
+        select(BoxLavagemModel)
+        .where(BoxLavagemModel.company_id == current_user.company_id)
+        .where(BoxLavagemModel.deleted_at.is_(None))
+    )
+    boxes = list(br.scalars().all())
+    boxes_ocupados = sum(1 for b in boxes if b.estado == "ocupado")
+    taxa_ocupacao_boxes_pct = (boxes_ocupados / len(boxes) * 100) if boxes else 0.0
+
+    car_r = await db.execute(
+        select(ConsumoAguaModel)
+        .where(ConsumoAguaModel.company_id == current_user.company_id)
+        .where(ConsumoAguaModel.referencia_tipo == "ordem_lavagem")
+    )
+    consumos_lavagem = list(car_r.scalars().all())
+    agua_por_categoria: dict[str, float] = {}
+    if consumos_lavagem:
+        ordens_por_id = {
+            o.id: o for o in (
+                await db.execute(
+                    select(OrdemLavagemModel)
+                    .where(OrdemLavagemModel.id.in_([c.referencia_id for c in consumos_lavagem]))
+                )
+            ).scalars().all()
+        }
+        categorias_r = await db.execute(
+            select(CategoriaVeiculoModel).where(CategoriaVeiculoModel.company_id == current_user.company_id)
+        )
+        categorias_por_id = {c.id: c.nome for c in categorias_r.scalars().all()}
+        for consumo in consumos_lavagem:
+            ordem = ordens_por_id.get(consumo.referencia_id)
+            categoria_nome = "Sem categoria"
+            if ordem and ordem.viatura_id:
+                vr = await db.execute(select(ViaturaModel).where(ViaturaModel.id == UUID(ordem.viatura_id)))
+                viatura = vr.scalar_one_or_none()
+                if viatura and viatura.categoria_veiculo_id:
+                    categoria_nome = categorias_por_id.get(viatura.categoria_veiculo_id, "Sem categoria")
+            agua_por_categoria[categoria_nome] = agua_por_categoria.get(categoria_nome, 0.0) + float(consumo.litros_consumidos)
+
     return {
-        "litros_vendidos_24h": float(litros_vendidos),
         "ordens_lavagem_em_curso": ordens_em_curso,
+        "lavagem_walkins_hoje": walkins_hoje,
+        "lavagem_reservas_hoje": reservas_hoje,
+        "lavagem_taxa_ocupacao_boxes_pct": round(taxa_ocupacao_boxes_pct, 2),
+        "lavagem_agua_por_categoria_litros": agua_por_categoria,
     }
 
 
