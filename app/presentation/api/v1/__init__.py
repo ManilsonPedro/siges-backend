@@ -56,6 +56,7 @@ from app.presentation.api.v1.bi import router as bi_router
 from app.presentation.api.v1.bi_lavagem_avancado import router as bi_lavagem_avancado_router
 from app.presentation.api.v1.anexos import router as anexos_router
 from app.presentation.api.v1.bi_agua import router as bi_agua_router
+from app.presentation.api.v1.bi_operacoes_avancado import router as bi_operacoes_avancado_router
 from app.presentation.api.v1.brevo_conversations import router as brevo_conversations_router
 
 __all__ = [
@@ -117,5 +118,6 @@ __all__ = [
     "bi_lavagem_avancado_router",
     "anexos_router",
     "bi_agua_router",
+    "bi_operacoes_avancado_router",
     "brevo_conversations_router",
 ]
