@@ -97,7 +97,14 @@ def run():
 
     with psycopg.connect(url, autocommit=False) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT company_id FROM users WHERE company_id IS NOT NULL")
+            # UNION com contas_cliente: uma empresa pode ter só contas de
+            # portal (ContaClienteModel) sem nenhum UserModel interno ainda
+            # — ambas usam o mesmo company_id, mas users sozinho não as via.
+            cur.execute("""
+                SELECT DISTINCT company_id FROM users WHERE company_id IS NOT NULL
+                UNION
+                SELECT DISTINCT company_id FROM contas_cliente WHERE company_id IS NOT NULL
+            """)
             companies = [row[0] for row in cur.fetchall()]
             print(f"Empresas encontradas: {len(companies)}")
 
