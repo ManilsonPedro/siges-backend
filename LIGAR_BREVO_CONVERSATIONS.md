@@ -50,15 +50,43 @@ Investigação feita (Julho 2026) confirmou:
 6. Definir quem monitoriza o inbox do Conversations (agente humano
    responsável por responder às dúvidas dos clientes).
 
-## Se no futuro se quiser ir mais além (trabalho de código, não feito agora)
+## Webhook de contexto (implementado)
 
-Só faz sentido depois do passo acima estar validado em produção:
+`app/presentation/api/v1/brevo_conversations.py` — quando uma conversa
+começa no Conversations, o SIGES cruza o email do visitante com
+`ContaClienteModel.email` e, se corresponder a um cliente do portal,
+injecta automaticamente uma nota de contexto na conversa (nome do
+cliente e a sua reserva mais recente: serviço, estado, data). O agente
+humano vê isto assim que abre a conversa, sem ter de procurar
+manualmente no SIGES.
 
-- Webhook FastAPI a receber eventos `Conversation Started` /
-  `Conversation Fragment` da Brevo (configurável em Conversations →
-  Settings → Integrations → Webhooks), para cruzar o email do contacto
-  com o `cliente_id`/reserva no SIGES e mostrar contexto ao agente humano
-  ao abrir a conversa. O payload do webhook não traz o ID da reserva —
-  teria de se correlacionar pelo endereço de email do cliente.
-- Isto é opcional e não bloqueia o objectivo actual (ligar as respostas a
-  um humano), que se resolve inteiramente nos passos manuais acima.
+Schema dos eventos da Brevo confirmado na documentação oficial
+(`developers.brevo.com/docs/conversations-webhooks`) — o email do
+visitante vem sempre em `visitor.attributes.EMAIL`, nunca num campo de
+topo. A Brevo não assina os webhooks (sem HMAC) — a autenticidade é
+garantida por um secret na própria URL do webhook.
+
+### Configuração necessária
+
+1. Variáveis de ambiente no `siges-backend` (Render ou `.env`):
+   - `BREVO_API_KEY` — chave de API da conta Brevo (Settings → SMTP & API
+     → API Keys), usada para chamar `POST /v3/conversations/{id}/messages`
+     e injectar a nota de contexto.
+   - `BREVO_CONVERSATIONS_WEBHOOK_SECRET` — um valor secreto à tua escolha
+     (ex. gerar com `openssl rand -hex 16`), usado só para autenticar o
+     webhook — não é fornecido pela Brevo.
+2. Em Brevo → **Conversations** → **Settings** → **Integrations** →
+   **Webhooks**, criar um webhook apontando para:
+   ```
+   https://<domínio-do-backend>/api/v1/brevo-conversations/webhook?secret=<BREVO_CONVERSATIONS_WEBHOOK_SECRET>
+   ```
+   (o mesmo valor definido em `BREVO_CONVERSATIONS_WEBHOOK_SECRET`).
+3. Testar: um cliente com conta no portal inicia uma conversa (chat/email
+   ligado) usando o mesmo email da sua conta — a nota de contexto deve
+   aparecer na conversa dentro de segundos. Sem `BREVO_API_KEY`
+   configurada, o webhook regista um aviso nos logs e não falha (apenas
+   não envia a nota).
+
+Se o email do visitante não corresponder a nenhuma `ContaClienteModel`
+(visitante anónimo, ou cliente sem conta no portal), o webhook não faz
+nada — não é tratado como erro.

@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     smtp_from_name: str = "SIGES BI JENNOS"
     app_base_url: str = "http://localhost:3000"
 
+    # Brevo Conversations — webhook de contexto (cruza email do visitante
+    # com cliente/reserva no SIGES e injecta contexto na conversa)
+    brevo_api_key: str = ""
+    brevo_conversations_webhook_secret: str = ""
+
     # Celery (não utilizado actualmente)
     celery_broker_url: str = "amqp://guest:guest@localhost//"
     celery_result_backend: str = "redis://localhost:6379/1"

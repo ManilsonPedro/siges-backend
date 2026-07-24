@@ -65,6 +65,7 @@ from app.presentation.api.v1 import (
     bi_lavagem_avancado_router,
     anexos_router,
     bi_agua_router,
+    brevo_conversations_router,
 )
 import logging
 import os
@@ -317,6 +318,7 @@ app.include_router(bi_router, prefix="/api/v1/bi", tags=["BI & Analytics"])
 app.include_router(bi_lavagem_avancado_router, prefix="/api/v1/bi", tags=["BI & Analytics · Lavagem Avançado"])
 app.include_router(anexos_router, prefix="/api/v1/anexos", tags=["Anexos"])
 app.include_router(bi_agua_router, prefix="/api/v1/bi", tags=["BI & Analytics · Água"])
+app.include_router(brevo_conversations_router, prefix="/api/v1/brevo-conversations", tags=["Brevo Conversations"])
 
 uploads_path = settings.storage_path
 os.makedirs(uploads_path, exist_ok=True)
