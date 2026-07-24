@@ -26,3 +26,6 @@ boto3==1.34.0
 
 # Scheduler in-process (lembretes de reserva — Sprint 6 Lavagem)
 apscheduler==3.10.4
+
+# HTTP client (webhook Brevo Conversations — envio de contexto)
+httpx==0.28.1
