@@ -27,3 +27,4 @@ tenacity==8.2.3
 pydantic-extra-types==2.0.0
 apscheduler==3.10.4
 httpx==0.28.1
+Pillow>=10.0.0
