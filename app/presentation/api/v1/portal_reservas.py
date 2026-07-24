@@ -22,6 +22,7 @@ from app.presentation.api.v1.anexos import listar_anexos_por_tipo
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import (
     BoxLavagemModel,
+    CategoriaVeiculoModel,
     ContaClienteModel,
     ControloQualidadeLavagemModel,
     ExtraLavagemModel,
@@ -82,6 +83,91 @@ async def disponibilidade(
         )
         for slot, box in r.all()
     ]
+
+
+# ─── Catálogo (tipos de lavagem, extras, categorias de veículo) ─────
+# Endpoints próprios do portal: as versões em operacoes_lavagem.py são
+# protegidas por require_permission (RBAC interno de colaborador) e
+# nunca aceitam o JWT de cliente — sem isto, o frontend do portal
+# acaba a chamar o endpoint interno com o token errado, recebe 401, e
+# o interceptor do cliente axios do BACKOFFICE (não o do portal)
+# redirecciona para /login (login interno) em vez de /portal/login.
+
+
+class TipoLavagemPortalDTO(BaseModel):
+    id: UUID
+    codigo: str
+    nome: str
+    descricao: Optional[str] = None
+    preco_base: Decimal
+    duracao_estimada_minutos: Decimal
+
+    class Config:
+        from_attributes = True
+
+
+class ExtraLavagemPortalDTO(BaseModel):
+    id: UUID
+    codigo: str
+    nome: str
+    preco: Decimal
+    duracao_adicional_minutos: Decimal
+
+    class Config:
+        from_attributes = True
+
+
+class CategoriaVeiculoPortalDTO(BaseModel):
+    id: UUID
+    codigo: str
+    nome: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/tipos-lavagem", response_model=List[TipoLavagemPortalDTO])
+async def tipos_lavagem(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(TipoLavagemModel)
+        .where(TipoLavagemModel.company_id == conta.company_id)
+        .where(TipoLavagemModel.activo.is_(True))
+        .where(TipoLavagemModel.deleted_at.is_(None))
+        .order_by(TipoLavagemModel.nome)
+    )
+    return list(r.scalars().all())
+
+
+@router.get("/extras", response_model=List[ExtraLavagemPortalDTO])
+async def extras_lavagem(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(ExtraLavagemModel)
+        .where(ExtraLavagemModel.company_id == conta.company_id)
+        .where(ExtraLavagemModel.activo.is_(True))
+        .order_by(ExtraLavagemModel.nome)
+    )
+    return list(r.scalars().all())
+
+
+@router.get("/categorias-veiculo", response_model=List[CategoriaVeiculoPortalDTO])
+async def categorias_veiculo(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(CategoriaVeiculoModel)
+        .where(CategoriaVeiculoModel.company_id == conta.company_id)
+        .where(CategoriaVeiculoModel.activo.is_(True))
+        .where(CategoriaVeiculoModel.deleted_at.is_(None))
+        .order_by(CategoriaVeiculoModel.ordem)
+    )
+    return list(r.scalars().all())
 
 
 # ─── Viaturas do cliente ─────────────────────────────────────────────
