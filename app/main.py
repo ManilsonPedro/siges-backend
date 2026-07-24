@@ -1,3 +1,13 @@
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    # psycopg (modo async) não suporta o ProactorEventLoop, que é a policy
+    # por omissão do asyncio no Windows — sem isto, qualquer ligação à BD
+    # falha ao arrancar localmente (uvicorn/python app/main.py). Produção
+    # (Render, Linux) não é afectada por este ramo.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -326,4 +336,8 @@ app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # loop="none": por omissão o uvicorn força ProactorEventLoop no Windows
+    # (uvicorn/loops/asyncio.py) independentemente da policy já definida no
+    # processo — loop="none" respeita o SelectorEventLoopPolicy configurado
+    # no topo deste ficheiro, necessário para psycopg em modo async.
+    uvicorn.run(app, host="0.0.0.0", port=8000, loop="none")
