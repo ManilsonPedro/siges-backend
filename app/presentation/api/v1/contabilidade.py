@@ -2,8 +2,9 @@
 
 Não tem escrita própria (excepto Plano de Contas/Centros de Custo,
 estruturais). Agrega MovimentoFinanceiro já existente. Nunca apresentar
-como "contabilidade certificada" — SAF-T e fatura legal continuam
-exclusivamente no ERP fiscal externo.
+como "contabilidade certificada" — a exportação SAF-T-AO abaixo é
+best-effort (ver app/infrastructure/export/saft_ao.py), não validada
+contra o XSD oficial da AGT; não substitui um ERP fiscal certificado.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from app.domain.entities import User
 from app.infrastructure.auth.dependencies import require_permission
 from app.infrastructure.database import get_db
 from app.infrastructure.database.models import ConceptoModel, MovimentoFinanceiroModel, PlanoContasModel
+from app.infrastructure.export.saft_ao import gerar_saft_ao
 
 
 router = APIRouter()
@@ -190,6 +192,33 @@ async def diario(
             for m in movimentos
         ],
     }
+
+
+# ─── Exportação SAF-T-AO (best-effort, ver saft_ao.py) ──────────────
+
+
+@router.get("/saft-ao")
+async def exportar_saft_ao(
+    data_inicio: datetime,
+    data_fim: datetime,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("contabilidade.ver")),
+):
+    """Exporta SAF-T-AO best-effort do período. NÃO validado contra o XSD
+    oficial da AGT — ver aviso completo em
+    app/infrastructure/export/saft_ao.py. Requer revisão por
+    contabilista/fiscalista antes de qualquer submissão oficial."""
+    if data_fim < data_inicio:
+        raise HTTPException(400, "data_fim não pode ser anterior a data_inicio")
+
+    xml_bytes = await gerar_saft_ao(
+        db, company_id=current_user.company_id, data_inicio=data_inicio, data_fim=data_fim,
+    )
+    filename = f"SAFT_AO_{data_inicio.strftime('%Y%m%d')}_{data_fim.strftime('%Y%m%d')}.xml"
+    return Response(
+        content=xml_bytes, media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 __all__ = ["router"]
