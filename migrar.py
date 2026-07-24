@@ -29,6 +29,7 @@ MODULOS = [
     "migrar_gestao_agua_fase1_2",
     "migrar_gestao_agua_fase3_8",
     "migrar_gestao_agua_fase4",
+    "migrar_veiculos_catalogo",
 ]
 
 

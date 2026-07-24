@@ -700,6 +700,46 @@ class ViaturaModel(Base):
     deleted_at = Column(DateTime, nullable=True, index=True)
 
 
+class MarcaVeiculoModel(Base):
+    """Catálogo de marcas de veículo — referência para os dropdowns de
+    Viatura (portal e backoffice). `ViaturaModel.marca` continua a ser
+    texto livre por compatibilidade; este catálogo só alimenta a
+    sugestão/selecção, não é FK obrigatória."""
+    __tablename__ = "marcas_veiculo"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    nome = Column(String(60), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class ModeloVeiculoModel(Base):
+    """Catálogo de modelos, associado a uma marca (mesma lógica de
+    referência que MarcaVeiculoModel — ViaturaModel.modelo é texto
+    livre)."""
+    __tablename__ = "modelos_veiculo"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    marca_id = Column(UUID(), nullable=False, index=True)
+    nome = Column(String(60), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
+class CorVeiculoModel(Base):
+    """Catálogo de cores de veículo — mesma lógica de referência."""
+    __tablename__ = "cores_veiculo"
+
+    id = Column(UUID(), primary_key=True, default=uuid4)
+    company_id = Column(UUID(), nullable=False, index=True)
+    nome = Column(String(30), nullable=False)
+    hex = Column(String(7), nullable=True)  # ex.: #FFFFFF, opcional (swatch visual)
+    activo = Column(Boolean, default=True, nullable=False, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+
 class ProgramaFidelizacaoModel(Base):
     __tablename__ = "programas_fidelizacao"
 

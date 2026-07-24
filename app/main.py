@@ -53,6 +53,7 @@ from app.presentation.api.v1 import (
     ecommerce_router,
     operacoes_estacao_router,
     operacoes_lavagem_router,
+    veiculos_catalogo_router,
     operacoes_agua_router,
     portal_auth_router,
     portal_reservas_router,
@@ -307,6 +308,7 @@ app.include_router(devolucoes_router, prefix="/api/v1/caixa/devolucoes", tags=["
 app.include_router(ecommerce_router, prefix="/api/v1/ecommerce", tags=["E-Commerce"])
 app.include_router(operacoes_estacao_router, prefix="/api/v1/operacoes/estacao", tags=["Operações · Estação"])
 app.include_router(operacoes_lavagem_router, prefix="/api/v1/operacoes/lavagem", tags=["Operações · Lavagem"])
+app.include_router(veiculos_catalogo_router, prefix="/api/v1/operacoes/lavagem/veiculos-catalogo", tags=["Operações · Catálogo de Veículo"])
 app.include_router(operacoes_agua_router, prefix="/api/v1/operacoes/agua", tags=["Operações · Água"])
 app.include_router(portal_auth_router, prefix="/api/v1/portal/auth", tags=["Portal do Cliente · Auth"])
 app.include_router(portal_reservas_router, prefix="/api/v1/portal", tags=["Portal do Cliente · Reservas"])

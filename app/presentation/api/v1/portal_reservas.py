@@ -25,7 +25,10 @@ from app.infrastructure.database.models import (
     CategoriaVeiculoModel,
     ContaClienteModel,
     ControloQualidadeLavagemModel,
+    CorVeiculoModel,
     ExtraLavagemModel,
+    MarcaVeiculoModel,
+    ModeloVeiculoModel,
     OrdemLavagemExtraModel,
     OrdemLavagemModel,
     SlotLavagemModel,
@@ -166,6 +169,81 @@ async def categorias_veiculo(
         .where(CategoriaVeiculoModel.activo.is_(True))
         .where(CategoriaVeiculoModel.deleted_at.is_(None))
         .order_by(CategoriaVeiculoModel.ordem)
+    )
+    return list(r.scalars().all())
+
+
+class MarcaVeiculoPortalDTO(BaseModel):
+    id: UUID
+    nome: str
+
+    class Config:
+        from_attributes = True
+
+
+class ModeloVeiculoPortalDTO(BaseModel):
+    id: UUID
+    marca_id: UUID
+    nome: str
+
+    class Config:
+        from_attributes = True
+
+
+class CorVeiculoPortalDTO(BaseModel):
+    id: UUID
+    nome: str
+    hex: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/marcas-veiculo", response_model=List[MarcaVeiculoPortalDTO])
+async def marcas_veiculo(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(MarcaVeiculoModel)
+        .where(MarcaVeiculoModel.company_id == conta.company_id)
+        .where(MarcaVeiculoModel.activo.is_(True))
+        .where(MarcaVeiculoModel.deleted_at.is_(None))
+        .order_by(MarcaVeiculoModel.nome)
+    )
+    return list(r.scalars().all())
+
+
+@router.get("/modelos-veiculo", response_model=List[ModeloVeiculoPortalDTO])
+async def modelos_veiculo(
+    marca_id: Optional[UUID] = None,
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(ModeloVeiculoModel)
+        .where(ModeloVeiculoModel.company_id == conta.company_id)
+        .where(ModeloVeiculoModel.activo.is_(True))
+        .where(ModeloVeiculoModel.deleted_at.is_(None))
+    )
+    if marca_id:
+        stmt = stmt.where(ModeloVeiculoModel.marca_id == marca_id)
+    stmt = stmt.order_by(ModeloVeiculoModel.nome)
+    r = await db.execute(stmt)
+    return list(r.scalars().all())
+
+
+@router.get("/cores-veiculo", response_model=List[CorVeiculoPortalDTO])
+async def cores_veiculo(
+    conta: ContaClienteModel = Depends(get_current_cliente),
+    db: AsyncSession = Depends(get_db),
+):
+    r = await db.execute(
+        select(CorVeiculoModel)
+        .where(CorVeiculoModel.company_id == conta.company_id)
+        .where(CorVeiculoModel.activo.is_(True))
+        .where(CorVeiculoModel.deleted_at.is_(None))
+        .order_by(CorVeiculoModel.nome)
     )
     return list(r.scalars().all())
 

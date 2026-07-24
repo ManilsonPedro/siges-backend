@@ -34,6 +34,7 @@ from app.presentation.api.v1.devolucoes import router as devolucoes_router
 from app.presentation.api.v1.ecommerce import router as ecommerce_router
 from app.presentation.api.v1.operacoes_estacao import router as operacoes_estacao_router
 from app.presentation.api.v1.operacoes_lavagem import router as operacoes_lavagem_router
+from app.presentation.api.v1.veiculos_catalogo import router as veiculos_catalogo_router
 from app.presentation.api.v1.operacoes_agua import router as operacoes_agua_router
 from app.presentation.api.v1.portal_auth import router as portal_auth_router
 from app.presentation.api.v1.portal_reservas import router as portal_reservas_router
@@ -96,6 +97,7 @@ __all__ = [
     "ecommerce_router",
     "operacoes_estacao_router",
     "operacoes_lavagem_router",
+    "veiculos_catalogo_router",
     "operacoes_agua_router",
     "portal_auth_router",
     "portal_reservas_router",
