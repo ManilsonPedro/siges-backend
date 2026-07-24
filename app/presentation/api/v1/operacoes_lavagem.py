@@ -15,7 +15,7 @@ Regras:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -758,6 +758,76 @@ async def create_slot(
     db.add(m)
     await db.commit()
     return m
+
+
+class SlotsGerarDTO(BaseModel):
+    box_ids: List[UUID] = Field(..., min_length=1)
+    data_inicio: date
+    data_fim: date
+    hora_inicio: str = Field(default="08:00", pattern=r"^\d{2}:\d{2}$")
+    hora_fim: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
+    duracao_minutos: int = Field(default=60, ge=15, le=240)
+    dias_semana: Optional[List[int]] = Field(
+        default=None, description="0=Segunda .. 6=Domingo; omitir gera todos os dias",
+    )
+
+
+@router.post("/slots/gerar")
+async def gerar_slots(
+    body: SlotsGerarDTO,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("operacoes.lavagem.agendar")),
+):
+    """Gera slots de hora em hora (ou duração configurável) para um ou
+    mais boxes, num intervalo de datas — resolve o "ovo e a galinha" do
+    portal do cliente: sem isto, cada slot teria de ser criado um a um
+    manualmente antes de qualquer reserva ser possível."""
+    if body.data_fim < body.data_inicio:
+        raise HTTPException(400, "data_fim não pode ser anterior a data_inicio")
+
+    br = await db.execute(
+        select(BoxLavagemModel)
+        .where(BoxLavagemModel.id.in_(body.box_ids))
+        .where(BoxLavagemModel.company_id == current_user.company_id)
+        .where(BoxLavagemModel.deleted_at.is_(None))
+    )
+    boxes = list(br.scalars().all())
+    if len(boxes) != len(body.box_ids):
+        raise HTTPException(404, "Um ou mais boxes não encontrados")
+
+    hi_h, hi_m = (int(x) for x in body.hora_inicio.split(":"))
+    hf_h, hf_m = (int(x) for x in body.hora_fim.split(":"))
+    if (hf_h, hf_m) <= (hi_h, hi_m):
+        raise HTTPException(400, "hora_fim deve ser depois de hora_inicio")
+
+    criados = 0
+    ignorados_existentes = 0
+    dia = body.data_inicio
+    while dia <= body.data_fim:
+        if body.dias_semana is None or dia.weekday() in body.dias_semana:
+            for box in boxes:
+                cursor = datetime.combine(dia, dtime(hi_h, hi_m))
+                fim_do_dia = datetime.combine(dia, dtime(hf_h, hf_m))
+                while cursor + timedelta(minutes=body.duracao_minutos) <= fim_do_dia:
+                    fim_slot = cursor + timedelta(minutes=body.duracao_minutos)
+                    existe_r = await db.execute(
+                        select(SlotLavagemModel.id)
+                        .where(SlotLavagemModel.box_id == box.id)
+                        .where(SlotLavagemModel.data_hora_inicio == cursor)
+                    )
+                    if existe_r.scalar_one_or_none():
+                        ignorados_existentes += 1
+                    else:
+                        db.add(SlotLavagemModel(
+                            id=uuid4(), box_id=box.id, estado="disponivel",
+                            data_hora_inicio=cursor, data_hora_fim=fim_slot,
+                        ))
+                        criados += 1
+                    cursor = fim_slot
+        dia += timedelta(days=1)
+
+    await db.commit()
+    return {"slots_criados": criados, "slots_ja_existentes_ignorados": ignorados_existentes}
 
 
 # ─── Ordens de Lavagem ───────────────────────────────────────────────
